@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { School, DataRecord, ClassEnrollment, UserRole } from '../types';
+import React, { useState } from 'react';
+import { School, DataRecord, ClassEnrollment, UserRole, Teacher } from '../types';
 
 interface ReportsProps {
   schools: School[];
@@ -11,25 +11,83 @@ interface ReportsProps {
 }
 
 const Reports: React.FC<ReportsProps> = ({ schools, userRole, activeSubTabFromProps }) => {
-  const activeReportTab = activeSubTabFromProps || 'overview';
+  const [activeReportTab, setActiveReportTab] = useState<'overview' | 'teachers' | 'facilities'>(activeSubTabFromProps as any || 'overview');
   const isFullAdmin = userRole === 'crc_admin';
+  const isAuthority = userRole === 'brc_admin' || userRole === 'dpc_admin' || userRole === 'crc_viewer';
 
-  const exportSourceFiles = () => {
-    const fullSourceData = {
-      project: "CRC KHAKHARDA FINAL APP",
-      timestamp: new Date().toISOString(),
-      developer: "AI Senior Engineer",
-      appData: schools
-    };
+  // Helper function to convert data to CSV and download
+  const downloadCSV = (data: any[], fileName: string, headers: string[]) => {
+    // Add BOM for Gujarati characters support in Excel
+    const BOM = '\uFEFF';
+    const csvRows = [headers.join(',')];
     
-    const blob = new Blob([JSON.stringify(fullSourceData, null, 2)], { type: 'application/json' });
+    data.forEach(row => {
+      const values = headers.map(header => {
+        const val = row[header] || '';
+        const escaped = ('' + val).replace(/"/g, '""');
+        return `"${escaped}"`;
+      });
+      csvRows.push(values.join(','));
+    });
+
+    const csvString = BOM + csvRows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `crc_khakharda_final_package.json`;
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${fileName}_${new Date().toLocaleDateString('gu-IN')}.csv`);
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
-    alert("ફાઈનલ સોર્સ પેકેજ ડાઉનલોડ થઈ રહ્યું છે.");
+    document.body.removeChild(link);
+  };
+
+  const exportTeachersExcel = () => {
+    const headers = ['SCHOOL_NAME', 'TEACHER_NAME', 'GENDER', 'DESIGNATION', 'MOBILE', 'DOB', 'AADHAAR', 'JOINING_SERVICE', 'JOINING_SCHOOL', 'SECTION', 'SUBJECT'];
+    const data = schools.flatMap(s => (s.teachers || []).map(t => ({
+      SCHOOL_NAME: s.name,
+      TEACHER_NAME: t.name,
+      GENDER: t.gender,
+      DESIGNATION: t.designation,
+      MOBILE: t.mobile,
+      DOB: t.dob,
+      AADHAAR: t.aadhaar,
+      JOINING_SERVICE: t.joiningServiceDate,
+      JOINING_SCHOOL: t.joiningSchoolDate,
+      SECTION: t.section,
+      SUBJECT: t.subject
+    })));
+    downloadCSV(data, 'TEACHERS_REPORT', headers);
+  };
+
+  const exportEnrollmentExcel = () => {
+    const headers = ['SCHOOL_NAME', 'DISE_CODE', 'TOTAL_BOYS', 'TOTAL_GIRLS', 'GRAND_TOTAL'];
+    const data = schools.map(s => {
+      const boys = (Object.values(s.enrollment || {}) as ClassEnrollment[]).reduce((sum, d) => sum + (Number(d.boys)||0), 0);
+      const girls = (Object.values(s.enrollment || {}) as ClassEnrollment[]).reduce((sum, d) => sum + (Number(d.girls)||0), 0);
+      return {
+        SCHOOL_NAME: s.name,
+        DISE_CODE: s.diseCode,
+        TOTAL_BOYS: boys,
+        TOTAL_GIRLS: girls,
+        GRAND_TOTAL: boys + girls
+      };
+    });
+    downloadCSV(data, 'ENROLLMENT_SUMMARY', headers);
+  };
+
+  const exportFacilitiesExcel = () => {
+    const headers = ['SCHOOL_NAME', 'ROOMS', 'BOYS_URINAL', 'GIRLS_URINAL', 'COMPUTER_LAB', 'COMP_COUNT', 'DRINKING_WATER', 'RO_SYSTEM'];
+    const data = schools.map(s => ({
+      SCHOOL_NAME: s.name,
+      ROOMS: s.facilities?.roomsCount || 0,
+      BOYS_URINAL: s.facilities?.boysUrinals || 0,
+      GIRLS_URINAL: s.facilities?.girlsUrinals || 0,
+      COMPUTER_LAB: s.facilities?.hasComputerLab || 'ના',
+      COMP_COUNT: s.facilities?.computerCount || 0,
+      DRINKING_WATER: s.facilities?.hasDrinkingWater || 'ના',
+      RO_SYSTEM: s.facilities?.hasRO || 'ના'
+    }));
+    downloadCSV(data, 'FACILITIES_REPORT', headers);
   };
 
   const allTeachers = schools.flatMap(s => (s.teachers || []).map(t => ({ ...t, schoolName: s.name })));
@@ -47,75 +105,91 @@ const Reports: React.FC<ReportsProps> = ({ schools, userRole, activeSubTabFromPr
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-slate-100 pb-10">
         <div>
           <h2 className="text-3xl md:text-4xl font-black text-slate-900 leading-tight uppercase tracking-tight">ક્લસ્ટર એનાલિસિસ</h2>
-          <p className="text-emerald-600 text-[10px] font-black mt-2 uppercase tracking-[0.2em] flex items-center gap-2">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-lg"></span>
-            સી.આર.સી. ખાખરડા - લાઈવ સ્ટેટસ
-          </p>
+          <div className="flex items-center gap-3 mt-2">
+             <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${isAuthority ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+               {isAuthority ? '● VIEW ONLY MODE' : '● FULL ADMIN ACCESS'}
+             </span>
+             <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">
+               {userRole?.toUpperCase().replace('_', ' ')}
+             </span>
+          </div>
         </div>
+        
         <div className="flex flex-wrap gap-3">
-           {isFullAdmin && (
-             <button 
-               onClick={exportSourceFiles}
-               className="bg-slate-900 text-white px-8 py-4 rounded-2xl text-[11px] font-black shadow-2xl transition-all flex items-center gap-3 active:scale-95 group"
-             >
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 group-hover:translate-y-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                SOURCE PACKAGE
-             </button>
-           )}
+           <button 
+             onClick={exportTeachersExcel}
+             className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-4 rounded-2xl text-[10px] font-black shadow-xl shadow-emerald-50 transition-all flex items-center gap-2 active:scale-95"
+           >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v11a2 2 0 01-2 2z"/></svg>
+              શિક્ષકો (Excel)
+           </button>
+           <button 
+             onClick={exportEnrollmentExcel}
+             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 rounded-2xl text-[10px] font-black shadow-xl shadow-blue-50 transition-all flex items-center gap-2 active:scale-95"
+           >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v11a2 2 0 01-2 2z"/></svg>
+              સંખ્યા (Excel)
+           </button>
+           <button 
+             onClick={exportFacilitiesExcel}
+             className="bg-slate-900 hover:bg-black text-white px-6 py-4 rounded-2xl text-[10px] font-black shadow-xl shadow-slate-200 transition-all flex items-center gap-2 active:scale-95"
+           >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v11a2 2 0 01-2 2z"/></svg>
+              સુવિધા (Excel)
+           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white border-2 border-slate-50 p-8 rounded-[4rem] shadow-sm flex flex-col items-center justify-center text-center group hover:border-emerald-100 transition-all">
-           <div className="bg-slate-50 w-12 h-12 rounded-3xl flex items-center justify-center text-slate-400 mb-4 group-hover:bg-emerald-50 group-hover:text-emerald-600">🏫</div>
+        <div className="bg-white border-2 border-slate-50 p-8 rounded-[3rem] shadow-sm flex flex-col items-center justify-center text-center group hover:border-emerald-100 transition-all">
            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">કુલ શાળાઓ</p>
            <p className="text-4xl font-black text-slate-900">{schools.length}</p>
         </div>
-        <div className="bg-white border-2 border-slate-50 p-8 rounded-[4rem] shadow-sm flex flex-col items-center justify-center text-center group hover:border-blue-100 transition-all">
-           <div className="bg-slate-50 w-12 h-12 rounded-3xl flex items-center justify-center text-slate-400 mb-4 group-hover:bg-blue-50 group-hover:text-blue-600">👨‍🏫</div>
+        <div className="bg-white border-2 border-slate-50 p-8 rounded-[3rem] shadow-sm flex flex-col items-center justify-center text-center group hover:border-blue-100 transition-all">
            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">કુલ શિક્ષકો</p>
            <p className="text-4xl font-black text-blue-600">{allTeachers.length}</p>
         </div>
-        <div className="bg-emerald-50 border-2 border-emerald-50 p-8 rounded-[4rem] shadow-sm flex flex-col items-center justify-center text-center group">
-           <div className="bg-white w-12 h-12 rounded-3xl flex items-center justify-center text-emerald-600 mb-4 shadow-sm">👦</div>
-           <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">કુલ કુમાર</p>
-           <p className="text-4xl font-black text-emerald-900">{clusterEnrollment.boys}</p>
+        <div className="bg-white border-2 border-slate-50 p-8 rounded-[3rem] shadow-sm flex flex-col items-center justify-center text-center group hover:border-emerald-100 transition-all">
+           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">કુલ સંખ્યા</p>
+           <p className="text-4xl font-black text-emerald-600">{clusterEnrollment.boys + clusterEnrollment.girls}</p>
         </div>
-        <div className="bg-pink-50 border-2 border-pink-50 p-8 rounded-[4rem] shadow-sm flex flex-col items-center justify-center text-center group">
-           <div className="bg-white w-12 h-12 rounded-3xl flex items-center justify-center text-pink-600 mb-4 shadow-sm">👧</div>
-           <p className="text-[10px] font-black text-pink-600 uppercase tracking-widest mb-1">કુલ કન્યા</p>
-           <p className="text-4xl font-black text-pink-900">{clusterEnrollment.girls}</p>
+        <div className="bg-white border-2 border-slate-50 p-8 rounded-[3rem] shadow-sm flex flex-col items-center justify-center text-center group hover:border-pink-100 transition-all">
+           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">કુલ કન્યાઓ</p>
+           <p className="text-4xl font-black text-pink-600">{clusterEnrollment.girls}</p>
         </div>
       </div>
 
-      <div className="bg-white border-2 border-slate-100 rounded-[4rem] shadow-2xl overflow-hidden min-h-[500px]">
-        <div className="p-10">
+      <div className="bg-slate-100/50 p-2 rounded-[2.5rem] flex gap-2">
+        <button onClick={() => setActiveReportTab('overview')} className={`flex-1 py-4 rounded-3xl font-black text-[10px] uppercase transition-all ${activeReportTab === 'overview' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>સંખ્યા સારાંશ</button>
+        <button onClick={() => setActiveReportTab('teachers')} className={`flex-1 py-4 rounded-3xl font-black text-[10px] uppercase transition-all ${activeReportTab === 'teachers' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>શિક્ષકોની યાદી</button>
+        <button onClick={() => setActiveReportTab('facilities')} className={`flex-1 py-4 rounded-3xl font-black text-[10px] uppercase transition-all ${activeReportTab === 'facilities' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>સુવિધાઓનો રિપોર્ટ</button>
+      </div>
+
+      <div className="bg-white border border-slate-100 rounded-[3rem] shadow-2xl overflow-hidden min-h-[500px]">
+        <div className="p-8">
            {activeReportTab === 'overview' && (
-             <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left text-sm min-w-[700px]">
+             <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
                    <thead>
-                      <tr className="border-b text-[11px] font-black text-slate-400 uppercase bg-slate-50/50">
-                         <th className="py-7 px-10">શાળાનું નામ</th>
-                         <th className="py-7 px-6 text-center">શિક્ષકો</th>
-                         <th className="py-7 px-6 text-center">કુમાર</th>
-                         <th className="py-7 px-6 text-center">કન્યા</th>
-                         <th className="py-7 px-6 text-center bg-slate-100/50 font-black">કુલ સંખ્યા</th>
+                      <tr className="border-b text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
+                         <th className="py-6 px-8">શાળાનું નામ</th>
+                         <th className="py-6 px-4 text-center">શિક્ષકો</th>
+                         <th className="py-6 px-4 text-center text-emerald-600">કુમાર</th>
+                         <th className="py-6 px-4 text-center text-pink-600">કન્યા</th>
+                         <th className="py-6 px-4 text-center bg-slate-100/50">કુલ</th>
                       </tr>
                    </thead>
-                   <tbody className="divide-y divide-slate-100">
+                   <tbody className="divide-y divide-slate-50">
                       {schools.map(s => {
                          const boys = (Object.values(s.enrollment || {}) as ClassEnrollment[]).reduce((sum, d) => sum + (Number(d.boys)||0), 0);
                          const girls = (Object.values(s.enrollment || {}) as ClassEnrollment[]).reduce((sum, d) => sum + (Number(d.girls)||0), 0);
                          return (
-                            <tr key={s.id} className="hover:bg-slate-50 transition-colors group">
-                               <td className="py-8 px-10">
-                                  <span className="font-black text-slate-800 uppercase text-xs block">{s.name}</span>
-                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter mt-1 block">DISE: {s.diseCode}</span>
-                               </td>
-                               <td className="py-8 px-6 text-center font-bold text-slate-700">{s.teachers?.length || 0}</td>
-                               <td className="py-8 px-6 text-center font-black text-emerald-700">{boys}</td>
-                               <td className="py-8 px-6 text-center font-black text-pink-700">{girls}</td>
-                               <td className="py-8 px-6 text-center font-black bg-slate-50/50 group-hover:bg-slate-900 group-hover:text-white transition-all"><span className="bg-slate-100 group-hover:bg-transparent px-4 py-2 rounded-2xl text-xs">{boys + girls}</span></td>
+                            <tr key={s.id} className="hover:bg-slate-50 transition-all group">
+                               <td className="py-6 px-8 font-black text-slate-800 uppercase text-xs">{s.name}</td>
+                               <td className="py-6 px-4 text-center font-bold">{s.teachers?.length || 0}</td>
+                               <td className="py-6 px-4 text-center font-black text-emerald-700">{boys}</td>
+                               <td className="py-6 px-4 text-center font-black text-pink-700">{girls}</td>
+                               <td className="py-6 px-4 text-center font-black bg-slate-50/30">{boys + girls}</td>
                             </tr>
                          );
                       })}
@@ -123,25 +197,52 @@ const Reports: React.FC<ReportsProps> = ({ schools, userRole, activeSubTabFromPr
                 </table>
              </div>
            )}
-           
+
            {activeReportTab === 'teachers' && (
-             <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-left text-sm min-w-[800px]">
+             <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
                    <thead>
-                      <tr className="border-b text-[11px] font-black text-slate-400 uppercase bg-slate-50/50">
-                         <th className="py-7 px-10">શિક્ષકનું નામ</th>
-                         <th className="py-7 px-6">શાળા</th>
-                         <th className="py-7 px-6">હોદ્દો</th>
-                         <th className="py-7 px-6 text-center">મોબાઈલ</th>
+                      <tr className="border-b text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
+                         <th className="py-6 px-8">શિક્ષકનું નામ</th>
+                         <th className="py-6 px-4">શાળા</th>
+                         <th className="py-6 px-4">હોદ્દો</th>
+                         <th className="py-6 px-4 text-center">મોબાઈલ</th>
                       </tr>
                    </thead>
-                   <tbody className="divide-y divide-slate-100">
+                   <tbody className="divide-y divide-slate-50">
                       {allTeachers.map((t, i) => (
-                         <tr key={i} className="hover:bg-slate-50 transition-colors">
-                            <td className="py-8 px-10 font-black text-slate-800 text-xs uppercase">{t.name}</td>
-                            <td className="py-8 px-6 text-[10px] font-bold text-slate-400 uppercase">{t.schoolName}</td>
-                            <td className="py-8 px-6"><span className="text-[10px] font-black bg-blue-50 text-blue-700 px-4 py-2 rounded-xl uppercase">{t.designation}</span></td>
-                            <td className="py-8 px-6 text-center font-black text-slate-700 text-xs">{t.mobile || '-'}</td>
+                         <tr key={i} className="hover:bg-slate-50 transition-all">
+                            <td className="py-6 px-8 font-black text-slate-800 text-xs uppercase">{t.name}</td>
+                            <td className="py-6 px-4 text-[9px] font-bold text-slate-400 uppercase">{t.schoolName}</td>
+                            <td className="py-6 px-4"><span className="text-[9px] font-black bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg uppercase">{t.designation}</span></td>
+                            <td className="py-6 px-4 text-center font-black text-slate-700 text-xs">{t.mobile || '-'}</td>
+                         </tr>
+                      ))}
+                   </tbody>
+                </table>
+             </div>
+           )}
+
+           {activeReportTab === 'facilities' && (
+             <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                   <thead>
+                      <tr className="border-b text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
+                         <th className="py-6 px-8">શાળાનું નામ</th>
+                         <th className="py-6 px-4 text-center">ઓરડા</th>
+                         <th className="py-6 px-4 text-center">કમ્પ્યુટર</th>
+                         <th className="py-6 px-4 text-center">R.O.</th>
+                         <th className="py-6 px-4 text-center">પીવાનું પાણી</th>
+                      </tr>
+                   </thead>
+                   <tbody className="divide-y divide-slate-50">
+                      {schools.map(s => (
+                         <tr key={s.id} className="hover:bg-slate-50 transition-all">
+                            <td className="py-6 px-8 font-black text-slate-800 uppercase text-xs">{s.name}</td>
+                            <td className="py-6 px-4 text-center font-bold">{s.facilities?.roomsCount || 0}</td>
+                            <td className="py-6 px-4 text-center font-bold">{s.facilities?.computerCount || 0}</td>
+                            <td className="py-6 px-4 text-center"><span className={`px-3 py-1 rounded-full text-[9px] font-black ${s.facilities?.hasRO === 'હા' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>{s.facilities?.hasRO || 'ના'}</span></td>
+                            <td className="py-6 px-4 text-center"><span className={`px-3 py-1 rounded-full text-[9px] font-black ${s.facilities?.hasDrinkingWater === 'હા' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>{s.facilities?.hasDrinkingWater || 'ના'}</span></td>
                          </tr>
                       ))}
                    </tbody>

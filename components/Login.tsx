@@ -5,238 +5,273 @@ import { School, UserRole } from '../types';
 interface LoginProps {
   schools: School[];
   onLogin: (role: UserRole, school: School | null) => void;
-  onResetPassword: (type: 'SCHOOL' | 'ADMIN', identifier: string, newPass: string) => void;
+  onResetPassword: (diseCode: string, newPass: string) => Promise<void>;
 }
 
 type LoginRole = 'PRINCIPAL' | 'CRC_ADMIN' | 'BRC_DPC';
-type ViewState = 'LOGIN' | 'FORGOT_PASSWORD' | 'VERIFY_OTP' | 'RESET_SUCCESS';
 
 const Login: React.FC<LoginProps> = ({ schools, onLogin, onResetPassword }) => {
-  const [view, setView] = useState<ViewState>('LOGIN');
   const [selectedRole, setSelectedRole] = useState<LoginRole>('PRINCIPAL');
   const [code, setCode] = useState('');
+  const [authority, setAuthority] = useState('BRC_KALYANPUR');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Forgot Password States
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotStep, setForgotStep] = useState(1);
+  const [forgotDise, setForgotDise] = useState('');
   const [otp, setOtp] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [error, setError] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [targetSchool, setTargetSchool] = useState<School | null>(null);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const adminEmail = "rk.yagnik01@gmail.com";
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoggingIn(true);
 
     const trimmedCode = code.trim();
     const trimmedPass = password.trim();
 
-    if (!trimmedPass) {
-      setError('કૃપા કરીને પાસવર્ડ દાખલ કરો.');
-      return;
-    }
-
     const defaultCrcUser = '2429030011';
     const defaultCrcPass = 'Ravi*1990';
     const defaultAuthorityPass = 'KKD2429030';
-    
-    const storedCrcPass = localStorage.getItem('admin_pass_CRC_ADMIN') || defaultCrcPass;
-    const storedAuthorityPass = localStorage.getItem('admin_pass_AUTHORITY') || defaultAuthorityPass;
 
-    switch (selectedRole) {
-      case 'CRC_ADMIN':
-        if (trimmedCode !== defaultCrcUser && trimmedPass !== 'master123') {
-          setError('CRC Admin યુઝરનેમ (ID) ખોટું છે.');
-          return;
-        }
-        if (trimmedPass === storedCrcPass || trimmedPass === 'master123' || trimmedPass === defaultCrcPass) {
+    try {
+      if (selectedRole === 'CRC_ADMIN') {
+        if (trimmedCode === defaultCrcUser && (trimmedPass === defaultCrcPass || trimmedPass === 'master123')) {
           onLogin('crc_admin', null);
         } else {
-          setError('CRC Admin પાસવર્ડ ખોટો છે.');
+          setError('CRC Admin ID અથવા પાસવર્ડ ખોટો છે.');
         }
-        break;
-
-      case 'BRC_DPC':
-        if (!trimmedCode) {
-          setError('કૃપા કરીને હોદ્દો પસંદ કરો.');
-          return;
-        }
-        if (trimmedPass === storedAuthorityPass || trimmedPass === 'master123' || trimmedPass === defaultAuthorityPass) {
-          if (trimmedCode === 'DPC_DWARKA') {
-            onLogin('dpc_admin', null);
-          } else {
-            onLogin('brc_admin', null);
-          }
+      } else if (selectedRole === 'BRC_DPC') {
+        if (trimmedPass === defaultAuthorityPass || trimmedPass === 'master123') {
+          if (authority === 'DPC_DWARKA') onLogin('dpc_admin', null);
+          else onLogin('brc_admin', null);
         } else {
-          setError('BRC/DPC પાસવર્ડ ખોટો છે.');
+          setError('ઓથોરિટી પાસવર્ડ ખોટો છે.');
         }
-        break;
-
-      case 'PRINCIPAL':
-        if (!trimmedCode) {
-          setError('કૃપા કરીને DISE કોડ દાખલ કરો.');
-          return;
-        }
+      } else {
         const school = schools.find(s => s.diseCode === trimmedCode);
         if (school && (school.password === trimmedPass || trimmedPass === 'master123')) {
           onLogin('principal', school);
         } else {
           setError('DISE કોડ અથવા પાસવર્ડ ખોટો છે.');
         }
-        break;
+      }
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
+  const startForgotProcess = () => {
+    const school = schools.find(s => s.diseCode === forgotDise);
+    if (!school) {
+      alert("આ DISE કોડ વાળી શાળા મળી નથી.");
+      return;
+    }
+    const newOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    setGeneratedOtp(newOtp);
+    setTargetSchool(school);
+    setForgotStep(2);
+    alert(`OTP સફળતાપૂર્વક મોકલવામાં આવ્યો છે.\nકૃપા કરીને રજીસ્ટર્ડ ઇમેઇલ (${adminEmail}) ચેક કરો.\n\nડેમો OTP: ${newOtp}`);
+  };
+
+  const verifyOtp = () => {
+    if (otp === generatedOtp) {
+      setForgotStep(3);
+    } else {
+      alert("ખોટો OTP દાખલ કર્યો છે.");
+    }
+  };
+
+  const completeReset = async () => {
+    if (!newPass.trim()) return;
+    setIsLoggingIn(true);
+    await onResetPassword(forgotDise, newPass);
+    setIsLoggingIn(false);
+    alert("પાસવર્ડ સફળતાપૂર્વક બદલાઈ ગયો છે! હવે નવા પાસવર્ડથી લોગિન કરો.");
+    setShowForgotModal(false);
+    setForgotStep(1);
+    setForgotDise('');
+    setNewPass('');
+  };
+
   const roles = [
-    { id: 'PRINCIPAL', label: 'શાળા લોગિન', icon: '🏫' },
+    { id: 'PRINCIPAL', label: 'શાળા (SCHOOL)', icon: '🏫' },
     { id: 'CRC_ADMIN', label: 'CRC ADMIN', icon: '👤' },
     { id: 'BRC_DPC', label: 'BRC / DPC', icon: '🏢' }
   ];
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-100 relative overflow-hidden font-sans">
-      <div className="absolute -top-24 -left-24 w-96 h-96 bg-emerald-100 rounded-full blur-3xl opacity-50 animate-pulse"></div>
-      <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-blue-100 rounded-full blur-3xl opacity-50 animate-pulse [animation-delay:2s]"></div>
-      
-      <div className="w-full max-w-lg relative z-10">
-        <div className="bg-white rounded-[3.5rem] shadow-2xl border border-slate-200 p-10 md:p-14">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-pink-50 font-sans relative overflow-hidden">
+      {/* Background Decor */}
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-pink-300/30 rounded-full blur-[120px] animate-pulse"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-rose-400/20 rounded-full blur-[120px] animate-pulse delay-1000"></div>
+      </div>
+
+      <div className="w-full max-w-lg z-10">
+        <div className="bg-white/80 backdrop-blur-2xl rounded-[4rem] shadow-[0_32px_64px_-16px_rgba(219,39,119,0.2)] p-10 md:p-14 border border-white/40">
           <div className="text-center mb-10">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-emerald-600 rounded-3xl shadow-2xl shadow-emerald-200 mb-6 transform -rotate-3">
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
+            <div className="inline-flex items-center justify-center w-24 h-24 bg-pink-600 rounded-[2.5rem] shadow-2xl shadow-pink-200 mb-6 transform -rotate-6 hover:rotate-0 transition-transform duration-500">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
             </div>
             <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">CRC KHAKHARDA</h1>
-            <p className="text-[10px] font-black text-slate-400 mt-2 uppercase tracking-[0.3em]">Digital Management Portal</p>
+            <p className="text-[10px] font-black text-pink-600 mt-2 uppercase tracking-[0.4em]">Cloud Management Portal</p>
           </div>
 
-          {view === 'LOGIN' && (
-            <div className="animate-in fade-in zoom-in duration-300">
-              <div className="flex gap-2 mb-8 bg-slate-50 p-1.5 rounded-2xl">
-                {roles.map((role) => (
-                  <button
-                    key={role.id}
-                    type="button"
-                    onClick={() => { setSelectedRole(role.id as LoginRole); setCode(''); setPassword(''); setError(''); }}
-                    className={`flex-1 flex flex-col items-center justify-center py-3 rounded-xl transition-all ${
-                      selectedRole === role.id 
-                        ? 'bg-white text-emerald-600 shadow-sm font-black' 
-                        : 'text-slate-400 hover:text-slate-600 font-bold'
-                    }`}
-                  >
-                    <span className="text-lg mb-1">{role.icon}</span>
-                    <span className="text-[8px] uppercase tracking-wider">{role.label}</span>
-                  </button>
-                ))}
+          {/* Role Switcher */}
+          <div className="flex gap-2 mb-10 bg-pink-100/50 p-2 rounded-[2.5rem] border border-pink-100">
+            {roles.map((role) => (
+              <button
+                key={role.id}
+                type="button"
+                onClick={() => setSelectedRole(role.id as LoginRole)}
+                className={`flex-1 flex flex-col items-center justify-center py-5 rounded-[2rem] transition-all duration-300 ${
+                  selectedRole === role.id ? 'bg-white text-pink-600 shadow-xl shadow-pink-100 font-black scale-105' : 'text-pink-300 font-bold hover:text-pink-400'
+                }`}
+              >
+                <span className="text-2xl mb-1">{role.icon}</span>
+                <span className="text-[8px] uppercase tracking-wider">{role.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-6">
+            {selectedRole !== 'BRC_DPC' ? (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-pink-400 uppercase ml-4 tracking-widest">યુઝર આઈડી / DISE કોડ</label>
+                <input 
+                  type="text"
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                  placeholder={selectedRole === 'CRC_ADMIN' ? "CRC ID દાખલ કરો" : "શાળાનો DISE કોડ"}
+                  className="w-full bg-pink-50/50 border-2 border-pink-50 focus:border-pink-500 focus:bg-white rounded-3xl px-8 py-5 outline-none font-black text-slate-700 uppercase transition-all shadow-inner"
+                />
               </div>
-
-              <form onSubmit={handleLogin} className="space-y-4">
-                {(selectedRole === 'PRINCIPAL' || selectedRole === 'CRC_ADMIN') && (
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Username / DISE Code</label>
-                    <input 
-                      type="text"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      placeholder={selectedRole === 'PRINCIPAL' ? "DISE CODE દાખલ કરો" : "ID દાખલ કરો"}
-                      className="w-full bg-slate-50 border-2 border-slate-50 focus:border-emerald-500 focus:bg-white rounded-2xl px-6 py-4 outline-none font-black text-slate-700 uppercase transition-all"
-                    />
-                  </div>
-                )}
-                {selectedRole === 'BRC_DPC' && (
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Select Authority</label>
-                    <select 
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      className="w-full bg-slate-50 border-2 border-slate-50 focus:border-emerald-500 focus:bg-white rounded-2xl px-6 py-4 outline-none font-black text-slate-700 transition-all"
-                    >
-                      <option value="">-- પસંદ કરો --</option>
-                      <option value="BRC_KALYANPUR">BRC કલ્યાણપુર</option>
-                      <option value="DPC_DWARKA">DPC દેવભૂમિ દ્વારકા</option>
-                    </select>
-                  </div>
-                )}
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Password</label>
-                  <div className="relative">
-                    <input 
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="પાસવર્ડ દાખલ કરો"
-                      className="w-full bg-slate-50 border-2 border-slate-50 focus:border-emerald-500 focus:bg-white rounded-2xl px-6 py-4 outline-none font-black text-slate-700 tracking-widest transition-all"
-                    />
-                    <button 
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-emerald-600"
-                    >
-                      {showPassword ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" /></svg>
-                      ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {error && <div className="bg-red-50 text-red-500 text-[10px] font-black text-center p-3 rounded-xl border border-red-100 animate-pulse uppercase tracking-wider">{error}</div>}
-
-                <button 
-                  type="submit"
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-5 rounded-2xl font-black text-lg shadow-2xl shadow-emerald-200 transition-all transform active:scale-95 mt-4"
+            ) : (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-pink-400 uppercase ml-4 tracking-widest">ઓથોરિટી પસંદ કરો</label>
+                <select 
+                  value={authority}
+                  onChange={(e) => setAuthority(e.target.value)}
+                  className="w-full bg-pink-50/50 border-2 border-pink-50 focus:border-pink-500 focus:bg-white rounded-3xl px-8 py-5 outline-none font-black text-slate-700 uppercase transition-all shadow-inner cursor-pointer"
                 >
-                  લોગિન (LOGIN)
-                </button>
-              </form>
-              
-              <div className="mt-8 text-center">
+                  <option value="BRC_KALYANPUR">BRC KALYANPUR</option>
+                  <option value="DPC_DWARKA">DPC DWARKA</option>
+                </select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-pink-400 uppercase ml-4 tracking-widest">પાસવર્ડ (PASSWORD)</label>
+              <div className="relative">
+                <input 
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-pink-50/50 border-2 border-pink-50 focus:border-pink-500 focus:bg-white rounded-3xl px-8 py-5 outline-none font-black text-slate-700 tracking-[0.5em] transition-all shadow-inner"
+                />
                 <button 
-                  onClick={() => setView('FORGOT_PASSWORD')}
-                  className="text-[10px] font-black text-slate-400 hover:text-emerald-600 transition-colors uppercase tracking-widest"
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-8 top-1/2 -translate-y-1/2 text-pink-300 font-black text-[10px] hover:text-pink-600 transition-colors"
                 >
-                  Forgot Password?
+                  {showPassword ? "HIDE" : "SHOW"}
                 </button>
               </div>
             </div>
-          )}
 
-          {/* Verification UI remains high quality for consistency */}
-          {view !== 'LOGIN' && (
-            <div className="animate-in slide-in-from-right-4 duration-300">
-               <button onClick={() => setView('LOGIN')} className="mb-6 text-slate-400 hover:text-emerald-600 flex items-center gap-2 font-black text-[10px] uppercase">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path d="M15 19l-7-7 7-7"/></svg> Back
-               </button>
-               {view === 'FORGOT_PASSWORD' && (
-                 <div className="space-y-6">
-                    <h3 className="text-xl font-black text-slate-800">પાસવર્ડ રીસેટ</h3>
-                    <p className="text-xs text-slate-500 font-bold">તમારા રજીસ્ટર્ડ મોબાઈલ નંબર પર OTP મોકલવા માટે નીચેનું બટન દબાવો.</p>
-                    <button onClick={() => { setGeneratedOtp('123456'); setView('VERIFY_OTP'); }} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg">OTP મેળવો</button>
-                 </div>
-               )}
-               {view === 'VERIFY_OTP' && (
-                 <div className="space-y-6">
-                    <div className="bg-emerald-50 text-emerald-700 p-4 rounded-2xl text-center font-black">તમારો OTP: {generatedOtp}</div>
-                    <input type="text" maxLength={6} onChange={e => setOtp(e.target.value)} placeholder="000000" className="w-full bg-slate-50 border-2 rounded-2xl p-4 text-center font-black text-2xl tracking-[0.5em] outline-none focus:border-emerald-500"/>
-                    <input type="password" onChange={e => setNewPassword(e.target.value)} placeholder="નવો પાસવર્ડ બનાવો" className="w-full bg-slate-50 border-2 rounded-2xl p-4 font-black outline-none focus:border-emerald-500"/>
-                    <button onClick={() => setView('RESET_SUCCESS')} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black">રીસેટ કરો</button>
-                 </div>
-               )}
-               {view === 'RESET_SUCCESS' && (
-                 <div className="text-center space-y-6">
-                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto"><svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg></div>
-                    <h3 className="text-xl font-black text-emerald-600">સફળતાપૂર્વક બદલાઈ ગયો છે!</h3>
-                    <button onClick={() => setView('LOGIN')} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-lg">હવે લોગિન કરો</button>
-                 </div>
-               )}
-            </div>
-          )}
+            {error && <div className="bg-rose-50 text-rose-500 text-[11px] font-black text-center p-5 rounded-3xl border border-rose-100 animate-bounce uppercase">{error}</div>}
 
-          <div className="mt-12 pt-8 border-t border-slate-100 text-center">
-            <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-2">Developed for CRC Khakharda</p>
-            <div className="flex justify-center gap-4">
-              <a href="tel:8401052890" className="bg-slate-50 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 p-3 rounded-xl transition-all font-black text-xs">Support: 8401052890</a>
+            <button 
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full bg-pink-600 hover:bg-pink-700 text-white py-6 rounded-3xl font-black text-lg shadow-2xl shadow-pink-200 transition-all transform active:scale-95 flex items-center justify-center gap-3"
+            >
+              {isLoggingIn ? <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin"></div> : 'લોગિન (LOGIN)'}
+            </button>
+
+            <div className="text-center pt-2">
+              <button 
+                type="button" 
+                onClick={() => setShowForgotModal(true)}
+                className="text-[10px] font-black text-pink-400 hover:text-pink-600 uppercase tracking-widest transition-colors underline decoration-pink-200"
+              >
+                પાસવર્ડ ભૂલી ગયા? (Forgot Password)
+              </button>
             </div>
+          </form>
+
+          <div className="mt-12 text-center">
+            <p className="text-[9px] font-black text-pink-300 uppercase tracking-[0.3em]">© 2025 CLUSTER RESOURCE CENTRE KHAKHARDA</p>
           </div>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-lg animate-in fade-in duration-300">
+           <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-500 border border-white">
+              <div className="bg-pink-600 p-10 text-center text-white">
+                 <h3 className="text-xl font-black mb-1 uppercase">પાસવર્ડ રીસેટ</h3>
+                 <p className="text-pink-100 font-black text-[8px] tracking-[0.3em] uppercase">EMAIL VERIFICATION SYSTEM</p>
+              </div>
+              
+              <div className="p-10 space-y-8">
+                 {forgotStep === 1 && (
+                   <div className="space-y-6">
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">શાળાનો DISE કોડ દાખલ કરો</label>
+                         <input type="text" value={forgotDise} onChange={e => setForgotDise(e.target.value.toUpperCase())} className="w-full bg-pink-50 border-2 border-pink-50 rounded-3xl px-8 py-5 outline-none font-black text-slate-700 focus:bg-white focus:border-pink-500 transition-all" placeholder="242903XXXXX"/>
+                      </div>
+                      <button onClick={startForgotProcess} className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black text-sm shadow-xl active:scale-95 transition-all uppercase">ઇમેઇલ પર OTP મોકલો</button>
+                   </div>
+                 )}
+
+                 {forgotStep === 2 && (
+                   <div className="space-y-6">
+                      <div className="text-center bg-slate-50 p-4 rounded-3xl border border-slate-100">
+                         <div className="flex justify-center mb-3">
+                            <div className="bg-pink-100 p-3 rounded-full text-pink-600">
+                               <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                            </div>
+                         </div>
+                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ઇમેઇલ પર OTP મોકલેલ છે:</p>
+                         <p className="text-xs font-black text-pink-600 mt-1">rk.yagnik01@gmail.com</p>
+                      </div>
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">૪ આંકડાનો OTP દાખલ કરો</label>
+                         <input type="text" maxLength={4} value={otp} onChange={e => setOtp(e.target.value)} className="w-full bg-pink-50 border-2 border-pink-50 rounded-3xl px-8 py-5 outline-none font-black text-slate-700 text-center text-3xl tracking-[1em] focus:bg-white focus:border-pink-500 transition-all"/>
+                      </div>
+                      <button onClick={verifyOtp} className="w-full bg-pink-600 text-white py-5 rounded-3xl font-black text-sm shadow-xl active:scale-95 transition-all uppercase tracking-widest">વેરીફાઈ કરો</button>
+                   </div>
+                 )}
+
+                 {forgotStep === 3 && (
+                   <div className="space-y-6">
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">નવો પાસવર્ડ સેટ કરો</label>
+                         <input type="text" value={newPass} onChange={e => setNewPass(e.target.value)} className="w-full bg-pink-50 border-2 border-pink-50 rounded-3xl px-8 py-5 outline-none font-black text-slate-700 focus:bg-white focus:border-pink-500 transition-all" placeholder="Enter New Password"/>
+                      </div>
+                      <button onClick={completeReset} className="w-full bg-emerald-600 text-white py-5 rounded-3xl font-black text-sm shadow-xl active:scale-95 transition-all uppercase tracking-widest">પાસવર્ડ સેવ કરો</button>
+                   </div>
+                 )}
+
+                 <button onClick={() => { setShowForgotModal(false); setForgotStep(1); }} className="w-full text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-rose-500 transition-colors">રદ કરો (CANCEL)</button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
