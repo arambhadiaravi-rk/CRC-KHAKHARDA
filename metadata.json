@@ -1,0 +1,7 @@
+{
+  "name": "CRC KHAKHARDA",
+  "description": "Cluster Resource Centre Data Management App for Khakharda Cluster.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
