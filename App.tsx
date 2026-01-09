@@ -70,7 +70,7 @@ const App: React.FC = () => {
           setCompetitions(data.competitions || []);
           setSyncStatus('synced');
         } else {
-          console.log("Database empty. Initializing...");
+          console.log("Initializing database with master data...");
           await setDoc(docRef, {
             schools: MASTER_SCHOOLS,
             records: [],
@@ -81,11 +81,11 @@ const App: React.FC = () => {
           setSyncStatus('synced');
         }
       } catch (err: any) {
-        console.error("Sync Error:", err.message);
+        console.error("Firebase Snapshot Error:", err.message);
         setSyncStatus('error');
       }
     }, (error) => {
-      console.error("Firebase Error:", error.message);
+      console.error("Firebase Connection Error:", error.message);
       setSyncStatus('error');
     });
 
@@ -196,13 +196,13 @@ const App: React.FC = () => {
 
       {showWelcomeModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-xl">
-           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden">
+           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden border border-white/20">
               <div className="bg-emerald-600 p-12 text-center text-white">
                  <div className="text-4xl mb-4">✅</div>
-                 <h3 className="text-2xl font-black mb-2 uppercase">Database Active</h3>
+                 <h3 className="text-2xl font-black mb-2 uppercase tracking-widest">System Online</h3>
               </div>
               <div className="p-10 text-center space-y-6">
-                 <p className="text-slate-600 font-bold leading-relaxed">તમારા Firebase Rules અપડેટ થઈ ગયા છે. હવે તમે જે પણ ફેરફાર કરશો તે સીધા ક્લાઉડ સર્વર પર સેવ થશે.</p>
+                 <p className="text-slate-600 font-bold leading-relaxed">તમારા Firebase કનેક્શન સેટિંગ્સ સફળતાપૂર્વક અપડેટ થઈ ગયા છે. હવે એપ ક્લાઉડ સર્વર સાથે કનેક્ટેડ છે.</p>
                  <button onClick={() => setShowWelcomeModal(false)} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black shadow-xl tracking-widest uppercase">શરૂ કરો</button>
               </div>
            </div>
