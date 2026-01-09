@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, onSnapshot, setDoc } from "firebase/firestore";
 import Header from './components/Header';
 import SchoolList from './components/SchoolList';
@@ -13,19 +13,20 @@ import { TabType, School, DataRecord, UserRole, Circular, Competition } from './
 
 // Firebase Configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyAs-DEMO-ONLY-DO-NOT-USE-IN-PROD",
-  authDomain: "crc-khakharda.firebaseapp.com",
-  projectId: "crc-khakharda",
-  storageBucket: "crc-khakharda.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef123456"
+  apiKey: "AIzaSyDmHdJPaz6w4b8MQvMO7jzp58HbSwKSTdI",
+  authDomain: "crc-khakharda-c88d7.firebaseapp.com",
+  projectId: "crc-khakharda-c88d7",
+  storageBucket: "crc-khakharda-c88d7.firebasestorage.app",
+  messagingSenderId: "1092915968972",
+  appId: "1:1092915968972:web:65b016822290e697e5bb69",
+  measurementId: "G-J2WHJ6BH26"
 };
 
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase safely
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const DATA_DOC_ID = "main_cluster_data";
 
-// ખખરડા ક્લસ્ટરની નવી અધિકૃત યાદી (સાચા DISE કોડ સાથે)
 const MASTER_SCHOOLS: School[] = [
   { id: '1', name: 'BHOPALKA PRIMARY SCHOOL', diseCode: '24290300801', principal: 'આચાર્યશ્રી', contact: '', password: '123', schoolType: 'NON SOE', standards: '1-8' },
   { id: '2', name: 'BHARATPUR VADI SHALA', diseCode: '24290300802', principal: 'આચાર્યશ્રી', contact: '', password: '123', schoolType: 'NON SOE', standards: '1-8' },
@@ -49,31 +50,42 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('syncing');
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
   
   const [schools, setSchools] = useState<School[]>([]);
   const [records, setRecords] = useState<DataRecord[]>([]);
   const [circulars, setCirculars] = useState<Circular[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
 
-  // Firebase Firestore Real-time Listener
   useEffect(() => {
     setSyncStatus('syncing');
-    const unsub = onSnapshot(doc(db, "cluster", DATA_DOC_ID), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setSchools(data.schools || []);
-        setRecords(data.records || []);
-        setCirculars(data.circulars || []);
-        setCompetitions(data.competitions || []);
-        setSyncStatus('synced');
-      } else {
-        setSchools([]);
+    const docRef = doc(db, "cluster", DATA_DOC_ID);
+
+    const unsub = onSnapshot(docRef, async (docSnap) => {
+      try {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setSchools(data.schools || MASTER_SCHOOLS);
+          setRecords(data.records || []);
+          setCirculars(data.circulars || []);
+          setCompetitions(data.competitions || []);
+          setSyncStatus('synced');
+        } else {
+          console.log("Database empty. Initializing...");
+          await setDoc(docRef, {
+            schools: MASTER_SCHOOLS,
+            records: [],
+            circulars: [],
+            competitions: [],
+            lastUpdated: new Date().toISOString()
+          });
+          setSyncStatus('synced');
+        }
+      } catch (err: any) {
+        console.error("Sync Error:", err.message);
         setSyncStatus('error');
       }
     }, (error) => {
-      console.error("Firebase Sync Error:", error);
+      console.error("Firebase Error:", error.message);
       setSyncStatus('error');
     });
 
@@ -92,17 +104,9 @@ const App: React.FC = () => {
       }, { merge: true });
       setSyncStatus('synced');
     } catch (error) {
-      console.error("Save Error:", error);
+      console.error("Write Error:", error);
       setSyncStatus('error');
     }
-  };
-
-  const resetAllSchoolData = async () => {
-    if (userRole !== 'crc_admin') return;
-    if (!window.confirm("શું તમે તમામ ૧૨ શાળાઓના DISE કોડ અને લિસ્ટને નવી માસ્ટર યાદી મુજબ રિસેટ કરવા માંગો છો?")) return;
-    
-    await saveToFirebase(MASTER_SCHOOLS, [], circulars, competitions);
-    alert("યાદી સફળતાપૂર્વક અપડેટ અને રિસેટ થઈ ગઈ છે!");
   };
 
   const handleLogin = (role: UserRole, school: School | null) => {
@@ -114,24 +118,9 @@ const App: React.FC = () => {
     if (role === 'brc_admin' || role === 'dpc_admin') setShowWelcomeModal(true);
   };
 
-  const handleResetPassword = async (diseCode: string, newPass: string) => {
-    const updatedSchools = schools.map(s => s.diseCode === diseCode ? { ...s, password: newPass } : s);
-    await saveToFirebase(updatedSchools, records, circulars, competitions);
-  };
-
   const updateSchoolData = async (updatedSchool: School) => {
-    if (userRole === 'brc_admin' || userRole === 'dpc_admin' || userRole === 'crc_viewer') return;
     const newSchools = schools.map(s => s.id === updatedSchool.id ? updatedSchool : s);
     await saveToFirebase(newSchools, records, circulars, competitions);
-  };
-
-  const handleChangePassword = async () => {
-    if (!newPassword.trim() || !loggedInSchoolId) return;
-    const updatedSchools = schools.map(s => s.id === loggedInSchoolId ? { ...s, password: newPassword } : s);
-    await saveToFirebase(updatedSchools, records, circulars, competitions);
-    alert("પાસવર્ડ બદલાઈ ગયો છે!");
-    setShowChangePasswordModal(false);
-    setNewPassword('');
   };
 
   const handleLogout = () => {
@@ -144,7 +133,10 @@ const App: React.FC = () => {
   const isCoordinatior = userRole === 'crc_admin' || userRole === 'brc_admin' || userRole === 'dpc_admin' || userRole === 'crc_viewer';
 
   if (!userRole) {
-    return <Login schools={schools} onLogin={handleLogin} onResetPassword={handleResetPassword} />;
+    return <Login schools={schools} onLogin={handleLogin} onResetPassword={async (dise, pass) => {
+      const updated = schools.map(s => s.diseCode === dise ? { ...s, password: pass } : s);
+      await saveToFirebase(updated, records, circulars, competitions);
+    }} />;
   }
 
   return (
@@ -153,7 +145,9 @@ const App: React.FC = () => {
 
       <aside className={`fixed md:static inset-y-0 left-0 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 ease-in-out w-72 bg-slate-900 text-white flex-shrink-0 flex flex-col z-50 shadow-2xl`}>
         <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-          <div className="bg-pink-600 p-2.5 rounded-xl"><svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg></div>
+          <div className="bg-pink-600 p-2.5 rounded-xl">
+             <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
+          </div>
           <span className="font-black text-lg tracking-tight uppercase">CRC KHAKHARDA</span>
         </div>
         
@@ -171,17 +165,8 @@ const App: React.FC = () => {
           ))}
         </nav>
 
-        <div className="p-6 border-t border-slate-800 space-y-3">
-           {userRole === 'crc_admin' && (
-             <button onClick={resetAllSchoolData} className="w-full py-2.5 px-4 rounded-xl text-[10px] font-black text-amber-400 border border-amber-400/20 hover:bg-amber-400/10 transition-all flex items-center justify-center gap-2">
-               🔄 શાળાઓ રિસેટ કરો
-             </button>
-           )}
-           <button onClick={() => setShowChangePasswordModal(true)} className="w-full py-2.5 px-4 rounded-xl text-[10px] font-black text-blue-400 border border-blue-400/20 hover:bg-blue-400/10 transition-all flex items-center justify-center gap-2">
-             <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/><path d="M12 14v4"/></svg>
-             પાસવર્ડ બદલો
-           </button>
-           <button onClick={handleLogout} className="w-full py-2.5 px-4 rounded-xl text-[10px] font-black text-rose-400 border border-rose-400/20 hover:bg-rose-400/10 transition-all">લોગઆઉટ</button>
+        <div className="p-6 border-t border-slate-800">
+           <button onClick={handleLogout} className="w-full py-4 px-4 rounded-xl text-xs font-black text-rose-400 border border-rose-400/20 hover:bg-rose-400/10 transition-all uppercase tracking-widest">લોગઆઉટ</button>
         </div>
       </aside>
 
@@ -209,35 +194,16 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {showChangePasswordModal && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-xl animate-in fade-in">
-           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-md overflow-hidden">
-              <div className="bg-blue-600 p-10 text-center text-white relative">
-                 <h3 className="text-xl font-black mb-2 uppercase">પાસવર્ડ બદલો</h3>
-                 <p className="text-blue-100 font-black text-[9px] tracking-widest uppercase">Firebase Secure Update</p>
-              </div>
-              <div className="p-10 space-y-6">
-                 <input type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter New Password" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 outline-none font-black text-slate-700 focus:border-blue-500 transition-all" />
-                 <div className="flex gap-4">
-                    <button onClick={() => setShowChangePasswordModal(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[10px]">રદ કરો</button>
-                    <button onClick={handleChangePassword} className="flex-[2] bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl text-sm">પાસવર્ડ સેવ કરો</button>
-                 </div>
-              </div>
-           </div>
-        </div>
-      )}
-
       {showWelcomeModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-xl animate-in fade-in">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-xl">
            <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden">
-              <div className="bg-pink-600 p-12 text-center text-white">
-                 <div className="text-4xl mb-4">🏢</div>
-                 <h3 className="text-2xl font-black mb-2 uppercase">શુભેચ્છા સંદેશ</h3>
-                 <p className="text-pink-100 font-black text-[10px] tracking-widest uppercase">Live Data Access</p>
+              <div className="bg-emerald-600 p-12 text-center text-white">
+                 <div className="text-4xl mb-4">✅</div>
+                 <h3 className="text-2xl font-black mb-2 uppercase">Database Active</h3>
               </div>
               <div className="p-10 text-center space-y-6">
-                 <p className="text-slate-600 font-bold leading-relaxed">નમસ્તે સાહેબ! <b>Firebase Real-time</b> ક્લસ્ટર પોર્ટલમાં આપનું સ્વાગત છે. આપ શાળાઓના DISE કોડ અને તમામ રિપોર્ટ્સ હવે વાસ્તવિક સમયમાં જોઈ શકશો.</p>
-                 <button onClick={() => setShowWelcomeModal(false)} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black shadow-xl tracking-widest uppercase">OK</button>
+                 <p className="text-slate-600 font-bold leading-relaxed">તમારા Firebase Rules અપડેટ થઈ ગયા છે. હવે તમે જે પણ ફેરફાર કરશો તે સીધા ક્લાઉડ સર્વર પર સેવ થશે.</p>
+                 <button onClick={() => setShowWelcomeModal(false)} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black shadow-xl tracking-widest uppercase">શરૂ કરો</button>
               </div>
            </div>
         </div>
