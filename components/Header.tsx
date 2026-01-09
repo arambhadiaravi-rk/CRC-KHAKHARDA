@@ -22,7 +22,6 @@ const Header: React.FC<HeaderProps> = ({
   userRole, 
   originalRole, 
   onExitImpersonation,
-  onGithubClick,
   schoolName,
   toggleSidebar,
   syncStatus
@@ -34,6 +33,10 @@ const Header: React.FC<HeaderProps> = ({
       case 'schools': return 'શાળાઓ';
       case 'reports': return 'રિપોર્ટ';
       case 'school-mgmt': return 'વ્યવસ્થાપન';
+      case 'enrollment': return 'વિદ્યાર્થી સંખ્યા';
+      case 'student-stats': return 'વિદ્યાર્થી આઈડી';
+      case 'cwsn': return 'દિવ્યાંગ બાળકો';
+      case 'fln': return 'FLN ડેટા';
       case 'circulars': return 'પરિપત્રો';
       case 'competitions': return 'સ્પર્ધાઓ';
       default: return '';
@@ -51,11 +54,11 @@ const Header: React.FC<HeaderProps> = ({
           <h2 className="text-sm md:text-lg font-black text-slate-800 uppercase tracking-tight">{getTabLabel(activeTab)}</h2>
           <div className="flex items-center gap-1.5 px-1">
             <span className={`w-1.5 h-1.5 rounded-full ${
-              syncStatus === 'synced' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 
+              syncStatus === 'synced' ? 'bg-emerald-500' : 
               syncStatus === 'syncing' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'
             }`}></span>
             <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.1em]">
-              {syncStatus === 'synced' ? 'Live Connected' : syncStatus === 'syncing' ? 'Updating...' : 'Database Offline'}
+              {syncStatus === 'synced' ? 'Saved' : syncStatus === 'syncing' ? 'Saving...' : 'Error'}
             </span>
           </div>
         </div>
@@ -63,13 +66,13 @@ const Header: React.FC<HeaderProps> = ({
       
       <div className="flex items-center gap-2 md:gap-4">
          {isImpersonating && (
-            <button onClick={onExitImpersonation} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-blue-200">
+            <button onClick={onExitImpersonation} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase shadow-lg">
               EXIT
             </button>
          )}
          
          <div className="hidden md:flex flex-col items-end">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Active User</span>
+            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">User</span>
             <span className="text-xs font-black text-emerald-600 leading-none truncate max-w-[180px]">
               {schoolName || userRole?.toUpperCase().replace('_', ' ')}
             </span>

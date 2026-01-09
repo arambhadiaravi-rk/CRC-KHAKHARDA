@@ -1,5 +1,5 @@
 
-export type TabType = 'schools' | 'data-entry' | 'school-mgmt' | 'login' | 'reports' | 'circulars' | 'competitions';
+export type TabType = 'schools' | 'school-mgmt' | 'enrollment' | 'student-stats' | 'cwsn' | 'fln' | 'reports' | 'circulars' | 'competitions';
 export type UserRole = 'crc_admin' | 'crc_viewer' | 'brc_admin' | 'dpc_admin' | 'principal' | null;
 
 export interface Teacher {
@@ -19,19 +19,6 @@ export interface Teacher {
 export interface ClassEnrollment {
   boys: number;
   girls: number;
-}
-
-export interface SMCMeeting {
-  meetingNo: number;
-  date: string;
-  membersCount: number | '';
-}
-
-export interface MonthlyLibraryData {
-  month: string;
-  totalBooks: number | '';
-  teacherBooks: number | '';
-  studentBooks: number | '';
 }
 
 export interface PhysicalFacilities {
@@ -61,7 +48,7 @@ export interface CWSNStudent {
 
 export interface CWSNData {
   studentCount: number | '';
-  certificateCount?: number | '';
+  certificateCount: number | '';
   hasCertificate: 'હા' | 'ના' | '';
   receivedAssistance: 'હા' | 'ના' | '';
   assistanceDetails: string;
@@ -80,9 +67,16 @@ export interface MonthlyFLN {
 }
 
 export interface StudentStats {
+  totalRegistered: number | '';
   mbuCount: number | '';
   aadhaarCount: number | '';
   apaarCount: number | '';
+}
+
+export interface SMCMeeting {
+  id: string;
+  date: string;
+  membersCount: number | '';
 }
 
 export interface School {
@@ -98,12 +92,11 @@ export interface School {
   teachers?: Teacher[];
   enrollment?: { [key: string]: ClassEnrollment };
   gallery?: string[]; 
-  smcMeetings?: SMCMeeting[];
-  libraryData?: MonthlyLibraryData[];
   facilities?: PhysicalFacilities;
   cwsnData?: CWSNData;
   flnData?: MonthlyFLN[];
   studentStats?: { [std: string]: StudentStats };
+  smcMeetings?: SMCMeeting[];
 }
 
 export interface DataRecord {
@@ -146,7 +139,6 @@ export interface ChatMessage {
   timestamp?: number;
 }
 
-// Added to fix import error in ImageSection.tsx
 export interface GeneratedImage {
   url: string;
   prompt: string;
