@@ -26,10 +26,10 @@ export interface Achievement {
   achieverType: 'શિક્ષક' | 'વિદ્યાર્થી';
   designation?: string;
   standard?: string;
-  result: string; // Score or Rank
+  result: string;
   date: string;
   timestamp: number;
-  photo?: string; // Base64 image of certificate or award
+  photo?: string;
 }
 
 export interface ClassEnrollment {
@@ -115,7 +115,7 @@ export interface School {
   contact: string;
   password?: string;
   standards?: '1-5' | '1-8' | '9-10' | '';
-  schoolType?: 'SOE' | 'NON SOE' | 'PM SHREE GOG' | 'PM SHREE GOG' | 'PM SHREE GOI' | '';
+  schoolType?: 'SOE' | 'NON SOE' | 'PM SHREE GOG' | 'PM SHREE GOI' | '';
   address?: string;
   teachers?: Teacher[];
   enrollment?: { [key: string]: ClassEnrollment };
@@ -157,6 +157,7 @@ export interface Suggestion {
   senderName: string;
 }
 
+// Added Winner interface for Competitions component
 export interface Winner {
   rank: string;
   studentName: string;
@@ -178,6 +179,7 @@ export interface ChatMessage {
   timestamp?: number;
 }
 
+// Added GeneratedImage interface for ImageSection component
 export interface GeneratedImage {
   url: string;
   prompt: string;

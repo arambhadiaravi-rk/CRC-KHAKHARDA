@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Header from './components/Header';
 import SchoolList from './components/SchoolList';
 import Login from './components/Login';
@@ -12,7 +12,8 @@ import Suggestions from './components/Suggestions';
 import SchoolAchievements from './components/SchoolAchievements';
 import { TabType, School, DataRecord, UserRole, Circular, Competition, Suggestion, Achievement } from './types';
 
-const STORAGE_KEY = "crc_khakharda_local_data";
+// IMPORTANT: Never change this key unless you want a fresh start.
+const STORAGE_KEY = "crc_khakharda_production_v1";
 const SUGGESTIONS_LAST_VIEWED_KEY = "suggestions_last_viewed_timestamp";
 
 const MASTER_SCHOOLS: School[] = [
@@ -44,8 +45,10 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Storage states
+  // Data State
   const [schools, setSchools] = useState<School[]>([]);
   const [records, setRecords] = useState<DataRecord[]>([]);
   const [circulars, setCirculars] = useState<Circular[]>([]);
@@ -58,16 +61,27 @@ const App: React.FC = () => {
     return parseInt(localStorage.getItem(SUGGESTIONS_LAST_VIEWED_KEY) || '0');
   });
 
-  // Change Password Modal State
-  const [showChangePassModal, setShowChangePassModal] = useState(false);
-  const [changePassForm, setChangePassForm] = useState({ old: '', new: '', confirm: '' });
-
+  // Initialization: Safely load and merge data
   useEffect(() => {
     const savedData = localStorage.getItem(STORAGE_KEY);
     if (savedData) {
       try {
         const parsed = JSON.parse(savedData);
-        setSchools(parsed.schools || MASTER_SCHOOLS);
+        
+        // Merge Logic: Prioritize saved data for dynamic fields, but keep master ID/Names intact
+        const mergedSchools = MASTER_SCHOOLS.map(ms => {
+          const saved = (parsed.schools || []).find((s: School) => s.id === ms.id);
+          if (!saved) return ms;
+          // Deep merge critical arrays and objects to prevent loss
+          return {
+            ...ms, // Static defaults
+            ...saved, // Dynamic overrides from user
+            name: ms.name, // Keep official names
+            diseCode: ms.diseCode // Keep official codes
+          };
+        });
+
+        setSchools(mergedSchools);
         setRecords(parsed.records || []);
         setCirculars(parsed.circulars || []);
         setCompetitions(parsed.competitions || []);
@@ -75,7 +89,7 @@ const App: React.FC = () => {
         setAchievements(parsed.achievements || []);
         setAdminPasswords(parsed.adminPasswords || DEFAULT_ADMIN_PASSWORDS);
       } catch (e) {
-        console.error("Data Parse Error:", e);
+        console.error("Critical Load Error - Recovering Defaults:", e);
         setSchools(MASTER_SCHOOLS);
       }
     } else {
@@ -83,38 +97,109 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const saveData = (
-    newSchools: School[], 
-    newRecords: DataRecord[], 
-    newCirculars: Circular[], 
-    newCompetitions: Competition[], 
-    newSuggestions: Suggestion[],
-    newAchievements: Achievement[],
-    newAdminPass?: typeof DEFAULT_ADMIN_PASSWORDS
-  ) => {
+  // Robust Global Save Function
+  const saveData = (updates: {
+    schools?: School[],
+    records?: DataRecord[],
+    circulars?: Circular[],
+    competitions?: Competition[],
+    suggestions?: Suggestion[],
+    achievements?: Achievement[],
+    adminPasswords?: typeof DEFAULT_ADMIN_PASSWORDS
+  }) => {
     setSyncStatus('syncing');
-    const dataToSave = {
-      schools: newSchools,
-      records: newRecords,
-      circulars: newCirculars,
-      competitions: newCompetitions,
-      suggestions: newSuggestions,
-      achievements: newAchievements,
-      adminPasswords: newAdminPass || adminPasswords,
-      lastUpdated: new Date().toISOString()
+
+    setSchools(prevSchools => {
+      const nextSchools = updates.schools || prevSchools;
+      setRecords(prevRecords => {
+        const nextRecords = updates.records || prevRecords;
+        setCirculars(prevCirculars => {
+          const nextCirculars = updates.circulars || prevCirculars;
+          setCompetitions(prevCompetitions => {
+            const nextCompetitions = updates.competitions || prevCompetitions;
+            setSuggestions(prevSuggestions => {
+              const nextSuggestions = updates.suggestions || prevSuggestions;
+              setAchievements(prevAchievements => {
+                const nextAchievements = updates.achievements || prevAchievements;
+                setAdminPasswords(prevPasswords => {
+                  const nextPasswords = updates.adminPasswords || prevPasswords;
+
+                  const dataToSave = {
+                    schools: nextSchools,
+                    records: nextRecords,
+                    circulars: nextCirculars,
+                    competitions: nextCompetitions,
+                    suggestions: nextSuggestions,
+                    achievements: nextAchievements,
+                    adminPasswords: nextPasswords,
+                    schemaVersion: "1.0",
+                    lastModified: Date.now()
+                  };
+                  
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+                  return nextPasswords;
+                });
+                return nextAchievements;
+              });
+              return nextSuggestions;
+            });
+            return nextCompetitions;
+          });
+          return nextCirculars;
+        });
+        return nextRecords;
+      });
+      return nextSchools;
+    });
+
+    setTimeout(() => setSyncStatus('synced'), 400);
+  };
+
+  // Export Entire Database as JSON file
+  const exportDatabase = () => {
+    const data = {
+      schools, records, circulars, competitions, suggestions, achievements, adminPasswords,
+      exportDate: new Date().toISOString(),
+      source: "CRC_KHAKHARDA_MANAGEMENT_PORTAL"
     };
-    
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
-    
-    setSchools(newSchools);
-    setRecords(newRecords);
-    setCirculars(newCirculars);
-    setCompetitions(newCompetitions);
-    setSuggestions(newSuggestions);
-    setAchievements(newAchievements);
-    if (newAdminPass) setAdminPasswords(newAdminPass);
-    
-    setTimeout(() => setSyncStatus('synced'), 500);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `CRC_KHAKHARDA_BACKUP_${new Date().toLocaleDateString('gu-IN').replace(/\//g, '-')}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Import Database from JSON file
+  const importDatabase = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (!parsed.schools) throw new Error("Invalid format");
+        
+        if (window.confirm("ચેતવણી: આ ફાઇલ અપલોડ કરવાથી તમારી હાલની તમામ માહિતી બદલાઈ જશે. શું તમે ખરેખર રીસ્ટોર કરવા માંગો છો?")) {
+          saveData({
+            schools: parsed.schools,
+            records: parsed.records,
+            circulars: parsed.circulars,
+            competitions: parsed.competitions,
+            suggestions: parsed.suggestions,
+            achievements: parsed.achievements,
+            adminPasswords: parsed.adminPasswords
+          });
+          alert("ડેટા સફળતાપૂર્વક રીસ્ટોર કરવામાં આવ્યો છે. પેજ રીલોડ થશે.");
+          window.location.reload();
+        }
+      } catch (err) {
+        alert("ખોટી ફાઇલ: ડેટા રીસ્ટોર કરી શકાયો નથી.");
+      }
+    };
+    reader.readAsText(file);
   };
 
   const hasNewSuggestions = useMemo(() => {
@@ -137,19 +222,9 @@ const App: React.FC = () => {
     setUserRole(role);
     setOriginalRole(role);
     setLoggedInSchoolId(school?.id || null);
-    
-    // Show welcome message for administrative roles
-    if (role === 'brc_admin' || role === 'dpc_admin') {
-      setShowWelcome(true);
-    }
-
+    if (role === 'brc_admin' || role === 'dpc_admin') setShowWelcome(true);
     if (role === 'principal') setActiveTab('school-mgmt');
     else setActiveTab('schools');
-  };
-
-  const updateSchoolData = (updatedSchool: School) => {
-    const newSchools = schools.map(s => s.id === updatedSchool.id ? updatedSchool : s);
-    saveData(newSchools, records, circulars, competitions, suggestions, achievements);
   };
 
   const handleLogout = () => {
@@ -157,35 +232,6 @@ const App: React.FC = () => {
     setLoggedInSchoolId(null);
     setActiveTab('schools');
     setShowWelcome(false);
-  };
-
-  const handleChangePassword = () => {
-    if (changePassForm.new !== changePassForm.confirm) {
-      alert("નવો પાસવર્ડ અને કન્ફર્મ પાસવર્ડ મેચ થતા નથી.");
-      return;
-    }
-
-    if (userRole === 'principal') {
-      const school = schools.find(s => s.id === loggedInSchoolId);
-      if (school?.password !== changePassForm.old && changePassForm.old !== 'master123') {
-        alert("જૂનો પાસવર્ડ ખોટો છે.");
-        return;
-      }
-      const updated = schools.map(s => s.id === loggedInSchoolId ? { ...s, password: changePassForm.new } : s);
-      saveData(updated, records, circulars, competitions, suggestions, achievements);
-    } else if (userRole) {
-      const currentAdminPass = adminPasswords[userRole as keyof typeof adminPasswords];
-      if (currentAdminPass !== changePassForm.old && changePassForm.old !== 'master123') {
-        alert("જૂનો પાસવર્ડ ખોટો છે.");
-        return;
-      }
-      const updatedAdminPass = { ...adminPasswords, [userRole]: changePassForm.new };
-      saveData(schools, records, circulars, competitions, suggestions, achievements, updatedAdminPass);
-    }
-
-    alert("પાસવર્ડ સફળતાપૂર્વક બદલાઈ ગયો છે.");
-    setShowChangePassModal(false);
-    setChangePassForm({ old: '', new: '', confirm: '' });
   };
 
   const loggedInSchool = useMemo(() => schools.find(s => s.id === loggedInSchoolId) || null, [schools, loggedInSchoolId]);
@@ -200,10 +246,9 @@ const App: React.FC = () => {
         onResetPassword={async (dise, pass, role) => {
           if (role === 'principal') {
             const updated = schools.map(s => s.diseCode === dise ? { ...s, password: pass } : s);
-            saveData(updated, records, circulars, competitions, suggestions, achievements);
+            saveData({ schools: updated });
           } else if (role) {
-            const updatedAdminPass = { ...adminPasswords, [role]: pass };
-            saveData(schools, records, circulars, competitions, suggestions, achievements, updatedAdminPass);
+            saveData({ adminPasswords: { ...adminPasswords, [role]: pass } });
           }
         }} 
       />
@@ -253,11 +298,11 @@ const App: React.FC = () => {
 
         <div className="p-4 border-t border-slate-800 space-y-2">
            <button 
-              onClick={() => setShowChangePassModal(true)} 
-              className="w-full py-3 px-4 rounded-xl text-[10px] font-black text-slate-400 border border-slate-700 hover:bg-slate-800 transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+              onClick={() => setShowBackupModal(true)} 
+              className="w-full py-3 px-4 rounded-xl text-[10px] font-black text-emerald-400 border border-emerald-400/20 hover:bg-emerald-400/10 transition-all uppercase tracking-widest flex items-center justify-center gap-2"
            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3y-3.5 3.5"/></svg>
-              પાસવર્ડ બદલો
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              ડેટા બેકઅપ
            </button>
            <button 
               onClick={handleLogout} 
@@ -299,21 +344,50 @@ const App: React.FC = () => {
               />
             )}
             {activeTab === 'reports' && <Reports schools={schools} records={records} onRestoreData={() => {}} userRole={userRole} />}
-            {activeTab === 'school-mgmt' && loggedInSchool && <SchoolManagement school={loggedInSchool} onUpdate={updateSchoolData} userRole={userRole} />}
+            {activeTab === 'school-mgmt' && loggedInSchool && <SchoolManagement school={loggedInSchool} onUpdate={(s) => saveData({ schools: schools.map(i => i.id === s.id ? s : i) })} userRole={userRole} />}
             
             {(activeTab === 'enrollment' || activeTab === 'student-stats' || activeTab === 'cwsn' || activeTab === 'fln') && loggedInSchool && (
-              <StudentDataEntry school={loggedInSchool} activeSection={activeTab} onUpdate={updateSchoolData} userRole={userRole} />
+              <StudentDataEntry school={loggedInSchool} activeSection={activeTab} onUpdate={(s) => saveData({ schools: schools.map(i => i.id === s.id ? s : i) })} userRole={userRole} />
             )}
 
-            {activeTab === 'circulars' && <Circulars circulars={circulars} onAdd={(c) => saveData(schools, records, [c, ...circulars], competitions, suggestions, achievements)} onRemove={(id) => saveData(schools, records, circulars.filter(c => c.id !== id), competitions, suggestions, achievements)} userRole={userRole} />}
-            {activeTab === 'competitions' && <Competitions competitions={competitions} onAdd={(c) => saveData(schools, records, circulars, [c, ...competitions], suggestions, achievements)} onRemove={(id) => saveData(schools, records, circulars, competitions.filter(c => c.id !== id), suggestions, achievements)} userRole={userRole} />}
-            {activeTab === 'suggestions' && <Suggestions suggestions={suggestions} onAdd={(s) => saveData(schools, records, circulars, competitions, [s, ...suggestions], achievements)} onRemove={(id) => saveData(schools, records, circulars, competitions, suggestions.filter(s => s.id !== id), achievements)} userRole={userRole} />}
-            {activeTab === 'achievements' && <SchoolAchievements achievements={achievements} onAdd={(a) => saveData(schools, records, circulars, competitions, suggestions, [a, ...achievements])} onRemove={(id) => saveData(schools, records, circulars, competitions, suggestions, achievements.filter(a => a.id !== id))} userRole={userRole} loggedInSchool={loggedInSchool} />}
+            {activeTab === 'circulars' && <Circulars circulars={circulars} onAdd={(c) => saveData({ circulars: [c, ...circulars] })} onRemove={(id) => saveData({ circulars: circulars.filter(c => c.id !== id) })} userRole={userRole} />}
+            {activeTab === 'competitions' && <Competitions competitions={competitions} onAdd={(c) => saveData({ competitions: [c, ...competitions] })} onRemove={(id) => saveData({ competitions: competitions.filter(c => c.id !== id) })} userRole={userRole} />}
+            {activeTab === 'suggestions' && <Suggestions suggestions={suggestions} onAdd={(s) => saveData({ suggestions: [s, ...suggestions] })} onRemove={(id) => saveData({ suggestions: suggestions.filter(s => s.id !== id) })} userRole={userRole} />}
+            {activeTab === 'achievements' && <SchoolAchievements achievements={achievements} onAdd={(a) => saveData({ achievements: [a, ...achievements] })} onRemove={(id) => saveData({ achievements: achievements.filter(a => a.id !== id) })} userRole={userRole} loggedInSchool={loggedInSchool} />}
           </div>
         </main>
       </div>
 
-      {/* Welcome Message Modal for BRC/DPC */}
+      {/* Backup & Recovery Modal */}
+      {showBackupModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
+           <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 border border-white">
+              <div className="bg-emerald-600 p-8 text-center text-white">
+                 <h3 className="text-xl font-black mb-1 uppercase tracking-tight">ડેટા મેનેજમેન્ટ (SECURITY)</h3>
+                 <p className="text-emerald-100 font-bold text-[10px] tracking-[0.2em] uppercase">Backup & Recovery Portal</p>
+              </div>
+              
+              <div className="p-10 space-y-8">
+                 <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-3xl space-y-3">
+                    <h4 className="font-black text-emerald-800 text-sm">૧. બેકઅપ ડાઉનલોડ કરો</h4>
+                    <p className="text-[11px] text-emerald-600 font-bold leading-relaxed">તમારા ક્લસ્ટરનો તમામ ડેટા એક સુરક્ષિત ફાઇલમાં ડાઉનલોડ કરો. મહિનામાં એકવાર આ કરવું સલાહભર્યું છે.</p>
+                    <button onClick={exportDatabase} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition-all">DOWNLOAD BACKUP (.JSON)</button>
+                 </div>
+
+                 <div className="bg-slate-50 border border-slate-200 p-6 rounded-3xl space-y-3">
+                    <h4 className="font-black text-slate-800 text-sm">૨. ડેટા પાછો લાવો (Restore)</h4>
+                    <p className="text-[11px] text-slate-500 font-bold leading-relaxed">જો તમે બ્રાઉઝર બદલ્યું હોય, તો ડાઉનલોડ કરેલી બેકઅપ ફાઇલ અહીંથી અપલોડ કરી બધો ડેટા પાછો મેળવી શકો છો.</p>
+                    <input type="file" accept=".json" className="hidden" ref={fileInputRef} onChange={importDatabase} />
+                    <button onClick={() => fileInputRef.current?.click()} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition-all">UPLOAD & RESTORE</button>
+                 </div>
+
+                 <button onClick={() => setShowBackupModal(false)} className="w-full text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-rose-500 transition-colors">બંધ કરો (CLOSE)</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Welcome Message Modal */}
       {showWelcome && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-500">
            <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-500 border-4 border-white">
@@ -336,38 +410,6 @@ const App: React.FC = () => {
                  >
                     OK (સમજાયું)
                  </button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* Change Password Modal */}
-      {showChangePassModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
-           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-500 border border-white">
-              <div className="bg-slate-900 p-10 text-center text-white">
-                 <h3 className="text-xl font-black mb-1 uppercase tracking-tight">પાસવર્ડ બદલો</h3>
-                 <p className="text-slate-400 font-black text-[8px] tracking-[0.3em] uppercase">Security Management</p>
-              </div>
-              
-              <div className="p-10 space-y-6">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">વર્તમાન પાસવર્ડ</label>
-                    <input type="password" value={changePassForm.old} onChange={e => setChangePassForm({...changePassForm, old: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-50 rounded-2xl px-6 py-4 outline-none font-black text-slate-700 focus:bg-white focus:border-indigo-500 transition-all" placeholder="••••••••"/>
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">નવો પાસવર્ડ</label>
-                    <input type="password" value={changePassForm.new} onChange={e => setChangePassForm({...changePassForm, new: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-50 rounded-2xl px-6 py-4 outline-none font-black text-slate-700 focus:bg-white focus:border-indigo-500 transition-all" placeholder="••••••••"/>
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">નવો પાસવર્ડ કન્ફર્મ કરો</label>
-                    <input type="password" value={changePassForm.confirm} onChange={e => setChangePassForm({...changePassForm, confirm: e.target.value})} className="w-full bg-slate-50 border-2 border-slate-50 rounded-2xl px-6 py-4 outline-none font-black text-slate-700 focus:bg-white focus:border-indigo-500 transition-all" placeholder="••••••••"/>
-                 </div>
-                 
-                 <div className="flex gap-4 pt-4">
-                    <button onClick={() => setShowChangePassModal(false)} className="flex-1 py-4 font-black text-slate-400 uppercase text-[10px] tracking-widest">રદ કરો</button>
-                    <button onClick={handleChangePassword} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] shadow-xl hover:bg-indigo-700 transition-all uppercase tracking-widest">અપડેટ કરો</button>
-                 </div>
               </div>
            </div>
         </div>
