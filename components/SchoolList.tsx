@@ -12,7 +12,7 @@ interface SchoolListProps {
 const SchoolList: React.FC<SchoolListProps> = ({ schools, records, userRole, onImpersonate }) => {
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
 
-  const isFullAdmin = userRole === 'crc_admin';
+  const isFullAdmin = userRole === 'crc_admin' || userRole === 'brc_admin' || userRole === 'dpc_admin';
 
   if (selectedSchool) {
     const enrollment = selectedSchool.enrollment || {};
@@ -21,6 +21,7 @@ const SchoolList: React.FC<SchoolListProps> = ({ schools, records, userRole, onI
     const facilities = selectedSchool.facilities;
     const cwsn = selectedSchool.cwsnData;
     const gallery = selectedSchool.gallery || [];
+    const teachers = selectedSchool.teachers || [];
     
     return (
       <div className="p-4 md:p-8 animate-in fade-in slide-in-from-right-4 duration-300 pb-20 overflow-y-auto max-h-[85vh]">
@@ -33,7 +34,8 @@ const SchoolList: React.FC<SchoolListProps> = ({ schools, records, userRole, onI
             પરત જાઓ
           </button>
           
-          {isFullAdmin && (
+          {/* ONLY CRC ADMIN can impersonate a school */}
+          {userRole === 'crc_admin' && (
             <button 
               onClick={() => onImpersonate(selectedSchool)}
               className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-2xl text-xs font-black shadow-lg shadow-blue-100 transition-all active:scale-95"
@@ -53,6 +55,54 @@ const SchoolList: React.FC<SchoolListProps> = ({ schools, records, userRole, onI
           </div>
 
           <div className="p-6 md:p-8 space-y-12">
+            {/* Teachers Section */}
+            <section>
+              <h3 className="text-xl font-black text-slate-800 mb-6 border-b pb-2 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                શિક્ષકોની વિગત (Staff Details)
+              </h3>
+              {teachers.length > 0 ? (
+                <div className="bg-slate-50 rounded-3xl overflow-hidden border border-slate-100">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[10px]">
+                      <thead>
+                        <tr className="bg-slate-900 text-white">
+                          <th className="p-4 font-black uppercase tracking-tight">નામ</th>
+                          <th className="p-4 font-black uppercase tracking-tight">જાતિ</th>
+                          <th className="p-4 font-black uppercase tracking-tight">હોદ્દો</th>
+                          <th className="p-4 font-black uppercase tracking-tight">જન્મતારીખ</th>
+                          <th className="p-4 font-black uppercase tracking-tight">મોબાઈલ</th>
+                          <th className="p-4 font-black uppercase tracking-tight">આધાર</th>
+                          <th className="p-4 font-black uppercase tracking-tight">પ્રથમ નિમણૂક</th>
+                          <th className="p-4 font-black uppercase tracking-tight">હાજર તારીખ</th>
+                          <th className="p-4 font-black uppercase tracking-tight">વિભાગ</th>
+                          <th className="p-4 font-black uppercase tracking-tight">વિષય</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {teachers.map((t, idx) => (
+                          <tr key={t.id} className="hover:bg-slate-50">
+                            <td className="p-4 font-black text-slate-700 italic">{t.name}</td>
+                            <td className="p-4 font-bold text-slate-500">{t.gender || '-'}</td>
+                            <td className="p-4 font-black text-indigo-600">{t.designation || '-'}</td>
+                            <td className="p-4 font-bold text-slate-500 whitespace-nowrap">{t.dob || '-'}</td>
+                            <td className="p-4 font-black text-slate-700">{t.mobile || '-'}</td>
+                            <td className="p-4 font-bold text-slate-500">{t.aadhaar || '-'}</td>
+                            <td className="p-4 font-bold text-slate-500 whitespace-nowrap">{t.joiningServiceDate || '-'}</td>
+                            <td className="p-4 font-bold text-slate-500 whitespace-nowrap">{t.joiningSchoolDate || '-'}</td>
+                            <td className="p-4 font-black text-emerald-600">{t.section || '-'}</td>
+                            <td className="p-4 font-black text-blue-600">{t.subject || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-10 text-center italic text-slate-400 bg-slate-50 rounded-3xl border border-dashed">શિક્ષકોની માહિતી ઉપલબ્ધ નથી</div>
+              )}
+            </section>
+
             {/* Physical Facilities Section */}
             <section>
               <h3 className="text-xl font-black text-slate-800 mb-6 border-b pb-2 flex items-center gap-2">
@@ -64,15 +114,16 @@ const SchoolList: React.FC<SchoolListProps> = ({ schools, records, userRole, onI
                   <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-2">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">શૌચાલય અને ઓરડા</p>
                     <div className="flex justify-between text-sm"><span className="text-slate-500 font-bold">ઓરડાઓ:</span><span className="font-black">{facilities.roomsCount || 0}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-emerald-600 font-bold">કુમાર યુરિનલ:</span><span className="font-black">{facilities.boysUrinals || 0}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-pink-600 font-bold">કન્યા યુરિનલ:</span><span className="font-black">{facilities.girlsUrinals || 0}</span></div>
-                    <div className="flex justify-between text-sm border-t pt-1 font-black"><span>કુલ યુરિનલ:</span><span className="text-slate-900">{(Number(facilities.boysUrinals)||0) + (Number(facilities.girlsUrinals)||0)}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-emerald-600 font-bold">કુમાર શૌચાલય / યુરિનલ:</span><span className="font-black">{(facilities.boysToilets||0)} / {(facilities.boysUrinals || 0)}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-pink-600 font-bold">કન્યા શૌચાલય / યુરિનલ:</span><span className="font-black">{(facilities.girlsToilets||0)} / {(facilities.girlsUrinals || 0)}</span></div>
+                    <div className="flex justify-between text-sm border-t pt-1 font-black"><span>કુલ યુનિટ:</span><span className="text-slate-900">{(Number(facilities.boysToilets)||0) + (Number(facilities.girlsToilets)||0) + (Number(facilities.boysUrinals)||0) + (Number(facilities.girlsUrinals)||0)}</span></div>
                     <div className="flex justify-between text-sm"><span>CWSN ટોયલેટ:</span><span className={`font-black ${facilities.hasCWSNToilet === 'હા' ? 'text-emerald-600' : 'text-slate-400'}`}>{facilities.hasCWSNToilet || '-'}</span></div>
                   </div>
                   <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-2">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">લેબ અને ટેકનોલોજી</p>
                     <div className="flex justify-between text-sm"><span className="text-slate-500 font-bold">કમ્પ્યુટર લેબ:</span><span className={`font-black ${facilities.hasComputerLab === 'હા' ? 'text-blue-600' : 'text-slate-400'}`}>{facilities.hasComputerLab || '-'}</span></div>
                     <div className="flex justify-between text-sm"><span className="text-slate-500 font-bold">કુલ કમ્પ્યુટર:</span><span className="font-black">{facilities.computerCount || 0}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-slate-500 font-bold">ઇન્ટરનેટ સુવિધા:</span><span className={`font-black ${facilities.hasInternet === 'હા' ? 'text-blue-600' : 'text-slate-400'}`}>{facilities.hasInternet || '-'}</span></div>
                     <div className="flex justify-between text-sm"><span className="text-slate-500 font-bold">LBD લેબ:</span><span className={`font-black ${facilities.hasLBDLab === 'હા' ? 'text-blue-600' : 'text-slate-400'}`}>{facilities.hasLBDLab || '-'}</span></div>
                     <div className="flex justify-between text-sm"><span className="text-slate-500 font-bold">અન્ય લેબ:</span><span className={`font-black ${facilities.hasOtherLab === 'હા' ? 'text-blue-600' : 'text-slate-400'}`}>{facilities.hasOtherLab || '-'}</span></div>
                     {facilities.hasOtherLab === 'હા' && <p className="text-[10px] text-blue-600 font-bold italic bg-blue-50 p-1.5 rounded-lg border border-blue-100">વિગત: {facilities.otherLabDetails}</p>}
@@ -119,7 +170,7 @@ const SchoolList: React.FC<SchoolListProps> = ({ schools, records, userRole, onI
                ) : <div className="py-10 text-center italic text-slate-400 bg-white rounded-3xl border border-dashed">CWSN ડેટા ઉપલબ્ધ નથી</div>}
             </section>
 
-            {/* Updated Gallery Section */}
+            {/* Gallery Section */}
             <section>
               <h3 className="text-xl font-black text-slate-800 mb-6 border-b pb-2 flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-pink-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -140,7 +191,6 @@ const SchoolList: React.FC<SchoolListProps> = ({ schools, records, userRole, onI
               )}
             </section>
 
-            {/* Existing Sections: Summary Tables */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                <section>
                   <h3 className="text-xl font-black text-slate-800 mb-6 border-b pb-2 flex items-center gap-2">
@@ -173,7 +223,7 @@ const SchoolList: React.FC<SchoolListProps> = ({ schools, records, userRole, onI
 
                <section>
                   <h3 className="text-xl font-black text-slate-800 mb-6 border-b pb-2 flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
                     FLN રીપોર્ટ (નવીનતમ)
                   </h3>
                   <div className="bg-slate-50 rounded-3xl p-4 overflow-x-auto border border-slate-100">

@@ -1,5 +1,5 @@
 
-export type TabType = 'schools' | 'school-mgmt' | 'enrollment' | 'student-stats' | 'cwsn' | 'fln' | 'reports' | 'circulars' | 'competitions';
+export type TabType = 'schools' | 'school-mgmt' | 'enrollment' | 'student-stats' | 'cwsn' | 'fln' | 'reports' | 'circulars' | 'competitions' | 'suggestions' | 'achievements';
 export type UserRole = 'crc_admin' | 'crc_viewer' | 'brc_admin' | 'dpc_admin' | 'principal' | null;
 
 export interface Teacher {
@@ -14,6 +14,22 @@ export interface Teacher {
   joiningSchoolDate: string;
   section: 'પ્રાથમિક' | 'ઉચ્ચ પ્રાથમિક' | '';
   subject?: 'ભાષા' | 'ગણિત-વિજ્ઞાન' | 'સામાજિક વિજ્ઞાન' | '';
+}
+
+export interface Achievement {
+  id: string;
+  schoolId: string;
+  schoolName: string;
+  category: 'સ્પર્ધા' | 'પરીક્ષા' | 'અન્ય';
+  achievementName: string;
+  achieverName: string;
+  achieverType: 'શિક્ષક' | 'વિદ્યાર્થી';
+  designation?: string;
+  standard?: string;
+  result: string; // Score or Rank
+  date: string;
+  timestamp: number;
+  photo?: string; // Base64 image of certificate or award
 }
 
 export interface ClassEnrollment {
@@ -71,12 +87,24 @@ export interface StudentStats {
   mbuCount: number | '';
   aadhaarCount: number | '';
   apaarCount: number | '';
+  scholarshipCount?: number | '';
 }
 
 export interface SMCMeeting {
   id: string;
   date: string;
   membersCount: number | '';
+}
+
+export interface LibraryMonthlyRecord {
+  month: string;
+  teacherBooks: number | '';
+  studentBooks: number | '';
+}
+
+export interface LibraryData {
+  totalBooks: number | '';
+  monthlyRecords: LibraryMonthlyRecord[];
 }
 
 export interface School {
@@ -97,6 +125,7 @@ export interface School {
   flnData?: MonthlyFLN[];
   studentStats?: { [std: string]: StudentStats };
   smcMeetings?: SMCMeeting[];
+  libraryData?: LibraryData;
 }
 
 export interface DataRecord {
@@ -116,6 +145,16 @@ export interface Circular {
   date: string;
   pdfData: string; 
   fileName: string;
+  uploadedBy?: string;
+}
+
+export interface Suggestion {
+  id: string;
+  text: string;
+  date: string;
+  timestamp: number;
+  senderRole: UserRole;
+  senderName: string;
 }
 
 export interface Winner {

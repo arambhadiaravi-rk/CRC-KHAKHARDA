@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { School, UserRole, ClassEnrollment, StudentStats, FLNRecord, MonthlyFLN } from '../types';
+import { School, UserRole, ClassEnrollment, StudentStats, FLNRecord, MonthlyFLN, CWSNData, CWSNStudent } from '../types';
 
 interface StudentDataEntryProps {
   school: School;
@@ -12,12 +12,62 @@ interface StudentDataEntryProps {
 const StudentDataEntry: React.FC<StudentDataEntryProps> = ({ school, activeSection, onUpdate, userRole }) => {
   const [editSchool, setEditSchool] = useState<School>(() => ({ ...school }));
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState('જૂન-૨૦૨૫');
   
   const isReadOnly = userRole === 'brc_admin' || userRole === 'dpc_admin' || userRole === 'crc_viewer';
+
+  const ACADEMIC_MONTHS = [
+    'જૂન-૨૦૨૫', 'જુલાઈ-૨૦૨૫', 'ઓગસ્ટ-૨૦૨૫', 'સપ્ટેમ્બર-૨૦૨૫', 'ઓક્ટોબર-૨૦૨૫', 
+    'નવેમ્બર-૨૦૨૫', 'ડિસેમ્બર-૨૦૨૫', 'જાન્યુઆરી-૨૦૨૬', 'ફેબ્રુઆરી-૨૦૨૬', 'માર્ચ-૨૦૨૬', 'એપ્રિલ-૨૦૨૬'
+  ];
+
+  // Grade list including Balvatika
+  const STANDARDS = editSchool.standards === '9-10' ? ['9', '10'] : 
+                    editSchool.standards === '1-5' ? ['બાલવાટિકા', '1', '2', '3', '4', '5'] : 
+                    ['બાલવાટિકા', '1', '2', '3', '4', '5', '6', '7', '8'];
 
   useEffect(() => {
     setEditSchool({ ...school });
   }, [school]);
+
+  // Sync Data logic
+  const syncTotalsFromEnrollment = (updatedSchool: School) => {
+    const newSchool = { ...updatedSchool };
+    const enrollment = newSchool.enrollment || {};
+    
+    // Sync to Student Stats
+    const stats = { ...(newSchool.studentStats || {}) };
+    STANDARDS.forEach(std => {
+      const e = enrollment[std] || { boys: 0, girls: 0 };
+      const total = (Number(e.boys) || 0) + (Number(e.girls) || 0);
+      stats[std] = { ...(stats[std] || { mbuCount: 0, aadhaarCount: 0, apaarCount: 0, scholarshipCount: 0 }), totalRegistered: total };
+    });
+    newSchool.studentStats = stats;
+
+    // Sync to FLN (current month)
+    const fln = [...(newSchool.flnData || [])];
+    let monthIdx = fln.findIndex(f => f.month === selectedMonth);
+    if (monthIdx === -1) {
+      fln.push({ month: selectedMonth, records: [] });
+      monthIdx = fln.length - 1;
+    }
+    
+    const records = [...fln[monthIdx].records];
+    STANDARDS.forEach(std => {
+      const e = enrollment[std] || { boys: 0, girls: 0 };
+      const total = (Number(e.boys) || 0) + (Number(e.girls) || 0);
+      const rIdx = records.findIndex(r => r.standard === std);
+      if (rIdx >= 0) {
+        records[rIdx] = { ...records[rIdx], totalStudents: total };
+      } else {
+        records.push({ standard: std, totalStudents: total, weakStudents: 0 });
+      }
+    });
+    fln[monthIdx].records = records;
+    newSchool.flnData = fln;
+
+    return newSchool;
+  };
 
   const handleSave = async () => {
     if (isReadOnly) return;
@@ -31,36 +81,83 @@ const StudentDataEntry: React.FC<StudentDataEntryProps> = ({ school, activeSecti
 
   const updateNested = (category: string, field: string, value: any) => {
     if (isReadOnly) return;
-    setEditSchool(prev => ({
-      ...prev,
-      [category]: {
-        ...(prev as any)[category],
-        [field]: value
+    setEditSchool(prev => {
+      const updated = {
+        ...prev,
+        [category]: {
+          ...(prev as any)[category],
+          [field]: value
+        }
+      };
+      // If updating enrollment, trigger sync
+      if (category === 'enrollment') {
+        return syncTotalsFromEnrollment(updated);
       }
-    }));
+      return updated;
+    });
   };
 
-  const STANDARDS = editSchool.standards === '9-10' ? ['9', '10'] : 
-                    editSchool.standards === '1-5' ? ['1', '2', '3', '4', '5'] : 
-                    ['1', '2', '3', '4', '5', '6', '7', '8'];
-
-  const grandTotal = (Object.values(editSchool.enrollment || {}) as ClassEnrollment[]).reduce((acc, curr) => acc + (Number(curr.boys) || 0) + (Number(curr.girls) || 0), 0);
-
-  // FLN Helpers
-  const currentFLN: MonthlyFLN = editSchool.flnData?.[0] || { month: 'માર્ચ-૨૦૨૫', records: [] };
-  
   const updateFLNRecord = (std: string, field: keyof FLNRecord, value: number) => {
     if (isReadOnly) return;
-    const records = [...currentFLN.records];
+    const allFlnData = [...(editSchool.flnData || [])];
+    let monthData = allFlnData.find(f => f.month === selectedMonth);
+    
+    if (!monthData) {
+      monthData = { month: selectedMonth, records: [] };
+      allFlnData.push(monthData);
+    }
+    
+    const records = [...monthData.records];
     const index = records.findIndex(r => r.standard === std);
+    
     if (index >= 0) {
       records[index] = { ...records[index], [field]: value };
     } else {
-      records.push({ standard: std, totalStudents: field === 'totalStudents' ? value : 0, weakStudents: field === 'weakStudents' ? value : 0 });
+      records.push({ 
+        standard: std, 
+        totalStudents: field === 'totalStudents' ? value : 0, 
+        weakStudents: field === 'weakStudents' ? value : 0 
+      });
     }
-    setEditSchool({ ...editSchool, flnData: [{ ...currentFLN, records }] });
+    
+    monthData.records = records;
+    setEditSchool({ ...editSchool, flnData: allFlnData });
   };
 
+  // CWSN Helpers
+  const cwsn: CWSNData = editSchool.cwsnData || { studentCount: '', certificateCount: '', hasCertificate: '', receivedAssistance: '', assistanceDetails: '', students: [] };
+  const addCWSNStudent = () => {
+    const updated = { ...cwsn, students: [...cwsn.students, { name: '', standard: '1' }] };
+    setEditSchool({ ...editSchool, cwsnData: updated });
+  };
+  const removeCWSNStudent = (idx: number) => {
+    const updated = { ...cwsn, students: cwsn.students.filter((_, i) => i !== idx) };
+    setEditSchool({ ...editSchool, cwsnData: updated });
+  };
+  const updateCWSNStudent = (idx: number, field: keyof CWSNStudent, value: string) => {
+    const newStudents = [...cwsn.students];
+    newStudents[idx] = { ...newStudents[idx], [field]: value };
+    setEditSchool({ ...editSchool, cwsnData: { ...cwsn, students: newStudents } });
+  };
+
+  const enrollmentSummary = STANDARDS.reduce((acc, std) => {
+    const data = (editSchool.enrollment || {})[std] || { boys: 0, girls: 0 };
+    acc.boys += Number(data.boys) || 0;
+    acc.girls += Number(data.girls) || 0;
+    return acc;
+  }, { boys: 0, girls: 0 });
+
+  const statsSummary = STANDARDS.reduce((acc, std) => {
+    const data = (editSchool.studentStats || {})[std] || { totalRegistered: 0, mbuCount: 0, aadhaarCount: 0, apaarCount: 0, scholarshipCount: 0 };
+    acc.totalRegistered += Number(data.totalRegistered) || 0;
+    acc.mbuCount += Number(data.mbuCount) || 0;
+    acc.aadhaarCount += Number(data.aadhaarCount) || 0;
+    acc.apaarCount += Number(data.apaarCount) || 0;
+    acc.scholarshipCount += Number(data.scholarshipCount) || 0;
+    return acc;
+  }, { totalRegistered: 0, mbuCount: 0, aadhaarCount: 0, apaarCount: 0, scholarshipCount: 0 });
+
+  const currentFLN: MonthlyFLN = (editSchool.flnData || []).find(f => f.month === selectedMonth) || { month: selectedMonth, records: [] };
   const flnTotals = currentFLN.records.reduce((acc, curr) => {
     if (STANDARDS.includes(curr.standard)) {
       acc.total += Number(curr.totalStudents) || 0;
@@ -76,7 +173,7 @@ const StudentDataEntry: React.FC<StudentDataEntryProps> = ({ school, activeSecti
           <div>
             <h2 className="text-xl font-black text-slate-800 uppercase">
               {activeSection === 'enrollment' && 'ધોરણ મુજબ સંખ્યા'}
-              {activeSection === 'student-stats' && 'વિદ્યાર્થી કાર્ડ સ્ટેટસ'}
+              {activeSection === 'student-stats' && 'વિદ્યાર્થીઓની વિગત'}
               {activeSection === 'cwsn' && 'દિવ્યાંગ બાળકોની વિગત'}
               {activeSection === 'fln' && 'FLN ડેટા એન્ટ્રી'}
             </h2>
@@ -93,141 +190,109 @@ const StudentDataEntry: React.FC<StudentDataEntryProps> = ({ school, activeSecti
 
         {activeSection === 'enrollment' && (
           <div className="bg-slate-50 p-6 md:p-10 rounded-[2.5rem] border border-slate-100 shadow-sm">
-            <div className="flex justify-between items-center mb-6">
-               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-emerald-500 pl-3">ધોરણ મુજબ સંખ્યા</h4>
-               <div className="bg-emerald-600 text-white px-6 py-2 rounded-xl text-xs font-black">શાળાનો ગ્રાન્ડ ટોટલ: {grandTotal}</div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {STANDARDS.map(std => {
-                const data = (editSchool.enrollment || {})[std] || { boys: 0, girls: 0 };
-                const total = (Number(data.boys)||0) + (Number(data.girls)||0);
-                return (
-                  <div key={std} className="bg-white p-5 rounded-3xl border border-slate-200/50 shadow-sm space-y-4">
-                    <div className="flex justify-between items-center border-b pb-2">
-                       <span className="font-black text-emerald-600">ધોરણ: {std}</span>
-                       <span className="text-[10px] font-black text-slate-900 bg-slate-100 px-3 py-1 rounded-full uppercase">ટોટલ: {total}</span>
-                    </div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-[9px] font-black text-blue-400 uppercase ml-1">કુમાર (Boys)</label>
-                        <input type="number" disabled={isReadOnly} value={data.boys} onChange={e => {
-                          const val = parseInt(e.target.value) || 0;
-                          updateNested('enrollment', std, { ...data, boys: val });
-                        }} className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl font-black text-blue-700 outline-none focus:bg-white"/>
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-black text-pink-400 uppercase ml-1">કન્યા (Girls)</label>
-                        <input type="number" disabled={isReadOnly} value={data.girls} onChange={e => {
-                          const val = parseInt(e.target.value) || 0;
-                          updateNested('enrollment', std, { ...data, girls: val });
-                        }} className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl font-black text-pink-700 outline-none focus:bg-white"/>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-emerald-500 pl-3 mb-2">ધોરણ મુજબ આડી હરોળમાં વિગત</h4>
+            <p className="text-[9px] text-emerald-600 font-bold mb-6 italic">* અહીં સંખ્યા ઉમેરવાથી અન્ય ટેબ્સમાં 'કુલ સંખ્યા' આપોઆપ જનરેટ થશે.</p>
+            <div className="overflow-x-auto">
+               <table className="w-full text-left text-xs bg-white rounded-3xl overflow-hidden shadow-sm">
+                  <thead>
+                    <tr className="bg-slate-900 text-white">
+                       <th className="p-4 font-black uppercase whitespace-nowrap">કેટેગરી</th>
+                       {STANDARDS.map(std => (
+                         <th key={std} className="p-4 font-black uppercase text-center border-l border-slate-800">{std === 'બાલવાટિકા' ? std : `ધોરણ ${std}`}</th>
+                       ))}
+                       <th className="p-4 font-black uppercase text-center bg-emerald-800 border-l border-slate-800">કુલ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-slate-100">
+                       <td className="p-4 font-black text-blue-600 italic">કુમાર (BOYS)</td>
+                       {STANDARDS.map(std => {
+                         const data = (editSchool.enrollment || {})[std] || { boys: 0, girls: 0 };
+                         return (
+                           <td key={std} className="p-2">
+                             <input type="number" disabled={isReadOnly} value={data.boys} onChange={e => {
+                               const val = parseInt(e.target.value) || 0;
+                               updateNested('enrollment', std, { ...data, boys: val });
+                             }} className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg font-black text-center text-blue-700 outline-none focus:bg-white"/>
+                           </td>
+                         );
+                       })}
+                       <td className="p-4 text-center font-black text-blue-800 bg-blue-50">{enrollmentSummary.boys}</td>
+                    </tr>
+                    <tr className="border-b border-slate-100">
+                       <td className="p-4 font-black text-pink-600 italic">કન્યા (GIRLS)</td>
+                       {STANDARDS.map(std => {
+                         const data = (editSchool.enrollment || {})[std] || { boys: 0, girls: 0 };
+                         return (
+                           <td key={std} className="p-2">
+                             <input type="number" disabled={isReadOnly} value={data.girls} onChange={e => {
+                               const val = parseInt(e.target.value) || 0;
+                               updateNested('enrollment', std, { ...data, girls: val });
+                             }} className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg font-black text-center text-pink-700 outline-none focus:bg-white"/>
+                           </td>
+                         );
+                       })}
+                       <td className="p-4 text-center font-black text-pink-800 bg-pink-50">{enrollmentSummary.girls}</td>
+                    </tr>
+                  </tbody>
+                  <tfoot className="bg-emerald-50">
+                    <tr className="font-black">
+                       <td className="p-4 uppercase text-emerald-800">કુલ (TOTAL)</td>
+                       {STANDARDS.map(std => {
+                         const data = (editSchool.enrollment || {})[std] || { boys: 0, girls: 0 };
+                         return (
+                           <td key={std} className="p-4 text-center text-emerald-900 border-l border-emerald-100">{(Number(data.boys)||0) + (Number(data.girls)||0)}</td>
+                         );
+                       })}
+                       <td className="p-4 text-center text-emerald-900 text-lg bg-emerald-200">{enrollmentSummary.boys + enrollmentSummary.girls}</td>
+                    </tr>
+                  </tfoot>
+               </table>
             </div>
           </div>
         )}
 
         {activeSection === 'student-stats' && (
           <div className="bg-slate-50 p-6 md:p-10 rounded-[2.5rem] border border-slate-100 shadow-sm">
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 border-l-4 border-indigo-500 pl-3">વિદ્યાર્થી આઈડી અને રજીસ્ટ્રેશન સ્ટેટસ</h4>
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 border-l-4 border-indigo-500 pl-3">વિદ્યાર્થીઓની વિગત (આધાર, MBU, શિષ્યવૃત્તિ)</h4>
             <div className="overflow-x-auto">
                <table className="w-full text-left text-xs bg-white rounded-3xl overflow-hidden shadow-sm">
                   <thead>
                     <tr className="bg-slate-900 text-white">
                        <th className="p-5 font-black uppercase">ધોરણ</th>
-                       <th className="p-5 font-black uppercase text-center bg-emerald-800">કુલ રજીસ્ટર્ડ</th>
-                       <th className="p-5 font-black uppercase text-center">MBU કાર્ડ</th>
-                       <th className="p-5 font-black uppercase text-center">આધાર એન્ટ્રી</th>
-                       <th className="p-5 font-black uppercase text-center bg-indigo-900/50">APAAR ID</th>
+                       <th className="p-5 font-black uppercase text-center bg-slate-800">કુલ રજીસ્ટર્ડ (Auto)</th>
+                       <th className="p-5 font-black uppercase text-center bg-indigo-900">MBU</th>
+                       <th className="p-5 font-black uppercase text-center bg-blue-900">આધારકાર્ડ ધરાવતા બાળકો</th>
+                       <th className="p-5 font-black uppercase text-center bg-purple-900">APAAR ID</th>
+                       <th className="p-5 font-black uppercase text-center bg-emerald-800">શિષ્યવૃત્તિ દરખાસ્ત થયેલ</th>
                     </tr>
                   </thead>
                   <tbody>
                     {STANDARDS.map(std => {
-                      const data = (editSchool.studentStats || {})[std] || { totalRegistered: 0, mbuCount: 0, aadhaarCount: 0, apaarCount: 0 };
+                      const data = (editSchool.studentStats || {})[std] || { totalRegistered: 0, mbuCount: 0, aadhaarCount: 0, apaarCount: 0, scholarshipCount: 0 };
                       return (
                         <tr key={std} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                           <td className="p-5 font-black text-slate-700 italic">ધોરણ {std}</td>
-                           <td className="p-3 bg-emerald-50/50"><input type="number" disabled={isReadOnly} value={data.totalRegistered} onChange={e => updateNested('studentStats', std, {...data, totalRegistered: parseInt(e.target.value)||0})} className="w-full bg-white border border-emerald-100 p-3 rounded-xl font-bold text-center text-emerald-700"/></td>
-                           <td className="p-3"><input type="number" disabled={isReadOnly} value={data.mbuCount} onChange={e => updateNested('studentStats', std, {...data, mbuCount: parseInt(e.target.value)||0})} className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl font-bold text-center"/></td>
-                           <td className="p-3"><input type="number" disabled={isReadOnly} value={data.aadhaarCount} onChange={e => updateNested('studentStats', std, {...data, aadhaarCount: parseInt(e.target.value)||0})} className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl font-bold text-center"/></td>
-                           <td className="p-3 bg-indigo-50/50"><input type="number" disabled={isReadOnly} value={data.apaarCount} onChange={e => updateNested('studentStats', std, {...data, apaarCount: parseInt(e.target.value)||0})} className="w-full bg-white border border-indigo-100 p-3 rounded-xl font-bold text-center text-blue-600"/></td>
+                           <td className="p-5 font-black text-slate-700 italic">{std === 'બાલવાટિકા' ? std : `ધોરણ ${std}`}</td>
+                           <td className="p-3 bg-slate-100/50 text-center font-black text-slate-600">{data.totalRegistered}</td>
+                           <td className="p-3 bg-indigo-50/50"><input type="number" disabled={isReadOnly} value={data.mbuCount} onChange={e => updateNested('studentStats', std, {...data, mbuCount: parseInt(e.target.value)||0})} className="w-full bg-white border border-indigo-100 p-3 rounded-xl font-bold text-center text-indigo-700"/></td>
+                           <td className="p-3 bg-blue-50/50"><input type="number" disabled={isReadOnly} value={data.aadhaarCount} onChange={e => updateNested('studentStats', std, {...data, aadhaarCount: parseInt(e.target.value)||0})} className="w-full bg-white border border-blue-100 p-3 rounded-xl font-bold text-center text-blue-700"/></td>
+                           <td className="p-3 bg-purple-50/50"><input type="number" disabled={isReadOnly} value={data.apaarCount} onChange={e => updateNested('studentStats', std, {...data, apaarCount: parseInt(e.target.value)||0})} className="w-full bg-white border border-purple-100 p-3 rounded-xl font-bold text-center text-purple-700"/></td>
+                           <td className="p-3 bg-emerald-50/50"><input type="number" disabled={isReadOnly} value={data.scholarshipCount || 0} onChange={e => updateNested('studentStats', std, {...data, scholarshipCount: parseInt(e.target.value)||0})} className="w-full bg-white border border-emerald-100 p-3 rounded-xl font-bold text-center text-emerald-700"/></td>
                         </tr>
                       );
                     })}
                   </tbody>
+                  <tfoot className="bg-slate-900 text-white">
+                    <tr className="font-black">
+                       <td className="p-5 uppercase tracking-widest text-emerald-400">કુલ (TOTAL)</td>
+                       <td className="p-5 text-center bg-slate-800 text-sm">{statsSummary.totalRegistered}</td>
+                       <td className="p-5 text-center bg-indigo-950 text-sm">{statsSummary.mbuCount}</td>
+                       <td className="p-5 text-center bg-blue-950 text-sm">{statsSummary.aadhaarCount}</td>
+                       <td className="p-5 text-center bg-purple-950 text-sm">{statsSummary.apaarCount}</td>
+                       <td className="p-5 text-center bg-emerald-950 text-sm">{statsSummary.scholarshipCount}</td>
+                    </tr>
+                  </tfoot>
                </table>
-            </div>
-          </div>
-        )}
-
-        {activeSection === 'cwsn' && (
-          <div className="space-y-8">
-            <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 shadow-sm">
-               <div className="col-span-full"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">દિવ્યાંગ બાળકોનો સારાંશ</h4></div>
-               <div>
-                  <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કુલ દિવ્યાંગ બાળકો</label>
-                  <input type="number" disabled={isReadOnly} value={editSchool.cwsnData?.studentCount || ''} onChange={e => updateNested('cwsnData', 'studentCount', parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
-               </div>
-               <div>
-                  <label className="text-[9px] font-black text-slate-500 uppercase ml-1">પ્રમાણપત્ર છે?</label>
-                  <select disabled={isReadOnly} value={editSchool.cwsnData?.hasCertificate || ''} onChange={e => updateNested('cwsnData', 'hasCertificate', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
-                     <option value="">-- પસંદ કરો --</option>
-                     <option value="હા">હા</option>
-                     <option value="ના">ના</option>
-                  </select>
-               </div>
-               {editSchool.cwsnData?.hasCertificate === 'હા' && (
-                  <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">પ્રમાણપત્ર ધરાવતા બાળકોની સંખ્યા</label>
-                    <input type="number" disabled={isReadOnly} value={editSchool.cwsnData?.certificateCount || ''} onChange={e => updateNested('cwsnData', 'certificateCount', parseInt(e.target.value))} className="w-full bg-white border border-emerald-200 p-3 rounded-xl font-bold text-emerald-700"/>
-                  </div>
-               )}
-               <div>
-                  <label className="text-[9px] font-black text-slate-500 uppercase ml-1">સહાય મળેલ છે?</label>
-                  <select disabled={isReadOnly} value={editSchool.cwsnData?.receivedAssistance || ''} onChange={e => updateNested('cwsnData', 'receivedAssistance', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
-                     <option value="">-- પસંદ કરો --</option>
-                     <option value="હા">હા</option>
-                     <option value="ના">ના</option>
-                  </select>
-               </div>
-               {editSchool.cwsnData?.receivedAssistance === 'હા' && (
-                 <div className="md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">સહાયની વિગત</label>
-                    <input disabled={isReadOnly} value={editSchool.cwsnData?.assistanceDetails || ''} onChange={e => updateNested('cwsnData', 'assistanceDetails', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold outline-none focus:ring-1 focus:ring-emerald-500" placeholder="કઈ સહાય મળી તે લખો..."/>
-                 </div>
-               )}
-            </div>
-            
-            <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-               <div className="flex justify-between items-center mb-6">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">દિવ્યાંગ બાળકોની યાદી (Student List)</h4>
-                  {!isReadOnly && <button onClick={() => {
-                    const newList = [...(editSchool.cwsnData?.students || []), { name: '', standard: '' }];
-                    updateNested('cwsnData', 'students', newList);
-                  }} className="text-indigo-600 text-[10px] font-black uppercase hover:underline">+ નવું બાળક ઉમેરો</button>}
-               </div>
-               <div className="space-y-4">
-                  {(editSchool.cwsnData?.students || []).map((s, idx) => (
-                    <div key={idx} className="flex gap-4 items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-                       <input disabled={isReadOnly} value={s.name} onChange={e => {
-                         const newList = [...(editSchool.cwsnData?.students || [])];
-                         newList[idx] = {...newList[idx], name: e.target.value.toUpperCase()};
-                         updateNested('cwsnData', 'students', newList);
-                       }} placeholder="બાળકનું નામ" className="flex-grow bg-slate-50 p-3 rounded-xl font-bold text-xs outline-none focus:bg-white transition-all"/>
-                       <select disabled={isReadOnly} value={s.standard} onChange={e => {
-                         const newList = [...(editSchool.cwsnData?.students || [])];
-                         newList[idx] = {...newList[idx], standard: e.target.value};
-                         updateNested('cwsnData', 'students', newList);
-                       }} className="w-24 bg-slate-50 p-3 rounded-xl font-black text-[10px] uppercase">
-                          <option value="">ધોરણ</option>
-                          {STANDARDS.map(st => <option key={st} value={st}>{st}</option>)}
-                       </select>
-                    </div>
-                  ))}
-               </div>
             </div>
           </div>
         )}
@@ -235,12 +300,15 @@ const StudentDataEntry: React.FC<StudentDataEntryProps> = ({ school, activeSecti
         {activeSection === 'fln' && (
            <div className="bg-slate-50 p-6 md:p-10 rounded-[2.5rem] border border-slate-100 shadow-sm">
              <div className="flex justify-between items-center mb-8">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">FLN (Foundational Literacy and Numeracy) ડેટા</h4>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">FLN ડેટા એન્ટ્રી</h4>
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] font-black text-slate-500 uppercase">માસ પસંદ કરો:</span>
-                  <select className="bg-white border border-slate-200 p-2 rounded-xl text-xs font-black outline-none">
-                    <option>માર્ચ-૨૦૨૫</option>
-                    <option>ફેબ્રુઆરી-૨૦૨૫</option>
+                  <select 
+                    value={selectedMonth} 
+                    onChange={e => setSelectedMonth(e.target.value)} 
+                    className="bg-white border border-slate-200 p-2 rounded-xl text-xs font-black outline-none"
+                  >
+                    {ACADEMIC_MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
              </div>
@@ -249,7 +317,7 @@ const StudentDataEntry: React.FC<StudentDataEntryProps> = ({ school, activeSecti
                    <thead>
                       <tr className="bg-indigo-600 text-white">
                          <th className="p-5 font-black uppercase">ધોરણ</th>
-                         <th className="p-5 font-black uppercase text-center">કુલ સંખ્યા</th>
+                         <th className="p-5 font-black uppercase text-center bg-indigo-500">કુલ સંખ્યા (Auto)</th>
                          <th className="p-5 font-black uppercase text-center bg-indigo-700">કચાશ ધરાવતા વિદ્યાર્થીઓ</th>
                          <th className="p-5 font-black uppercase text-center">પ્રગતિ (%)</th>
                       </tr>
@@ -261,17 +329,8 @@ const StudentDataEntry: React.FC<StudentDataEntryProps> = ({ school, activeSecti
                         
                         return (
                           <tr key={std} className="border-b border-slate-100 hover:bg-indigo-50/30">
-                              <td className="p-5 font-black text-slate-700 italic">ધોરણ {std}</td>
-                              <td className="p-3">
-                                <input 
-                                  type="number" 
-                                  disabled={isReadOnly} 
-                                  value={rec.totalStudents}
-                                  onChange={e => updateFLNRecord(std, 'totalStudents', parseInt(e.target.value)||0)}
-                                  className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl font-bold text-center outline-none focus:bg-white focus:ring-1 focus:ring-indigo-200" 
-                                  placeholder="0"
-                                />
-                              </td>
+                              <td className="p-5 font-black text-slate-700 italic">{std === 'બાલવાટિકા' ? std : `ધોરણ ${std}`}</td>
+                              <td className="p-3 text-center font-black text-indigo-400 bg-slate-50/50">{rec.totalStudents}</td>
                               <td className="p-3 bg-indigo-50/20">
                                 <input 
                                   type="number" 
@@ -305,8 +364,61 @@ const StudentDataEntry: React.FC<StudentDataEntryProps> = ({ school, activeSecti
                    </tfoot>
                 </table>
              </div>
-             <p className="mt-6 text-[9px] font-bold text-slate-400 uppercase italic">* પ્રગતિની ગણતરી (કુલ સંખ્યા - કચાશ) / કુલ સંખ્યા ના આધારે કરવામાં આવે છે.</p>
            </div>
+        )}
+
+        {activeSection === 'cwsn' && (
+          <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="bg-indigo-50 p-8 rounded-[2.5rem] border border-indigo-100 space-y-6 shadow-sm">
+                   <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">સામાન્ય વિગત</h4>
+                   <div className="grid grid-cols-2 gap-4">
+                      <div>
+                         <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કુલ બાળકો</label>
+                         <input type="number" disabled={isReadOnly} value={cwsn.studentCount} onChange={e => updateNested('cwsnData', 'studentCount', parseInt(e.target.value)||0)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
+                      </div>
+                      <div>
+                         <label className="text-[9px] font-black text-slate-500 uppercase ml-1">પ્રમાણપત્ર ધરાવતા</label>
+                         <input type="number" disabled={isReadOnly} value={cwsn.certificateCount} onChange={e => updateNested('cwsnData', 'certificateCount', parseInt(e.target.value)||0)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
+                      </div>
+                      <div>
+                         <label className="text-[9px] font-black text-slate-500 uppercase ml-1">સહાય મળેલ છે?</label>
+                         <select disabled={isReadOnly} value={cwsn.receivedAssistance} onChange={e => updateNested('cwsnData', 'receivedAssistance', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
+                            <option value="">-- પસંદ કરો --</option>
+                            <option value="હા">હા</option>
+                            <option value="ના">ના</option>
+                         </select>
+                      </div>
+                      {cwsn.receivedAssistance === 'હા' && (
+                         <div className="col-span-2">
+                            <label className="text-[9px] font-black text-slate-500 uppercase ml-1">સહાયની વિગત</label>
+                            <input type="text" disabled={isReadOnly} value={cwsn.assistanceDetails} onChange={e => updateNested('cwsnData', 'assistanceDetails', e.target.value.toUpperCase())} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold" placeholder="EX: TRANSPORT / ESCORT ALLOWANCE"/>
+                         </div>
+                      )}
+                   </div>
+                </div>
+
+                <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-6 shadow-sm">
+                   <div className="flex justify-between items-center">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-slate-500 pl-3">બાળકોના નામની યાદી</h4>
+                      {!isReadOnly && <button onClick={addCWSNStudent} className="text-indigo-600 text-[9px] font-black uppercase hover:underline">+ ઉમેરો</button>}
+                   </div>
+                   <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                      {cwsn.students.map((s, idx) => (
+                         <div key={idx} className="flex gap-2 items-center bg-white p-3 rounded-2xl border border-slate-100 shadow-sm group">
+                            <span className="text-[10px] font-black text-slate-300 w-4">{idx + 1}</span>
+                            <input type="text" disabled={isReadOnly} value={s.name} onChange={e => updateCWSNStudent(idx, 'name', e.target.value.toUpperCase())} className="flex-grow bg-slate-50 border-none p-2 rounded-lg text-xs font-bold" placeholder="બાળકનું નામ"/>
+                            <select disabled={isReadOnly} value={s.standard} onChange={e => updateCWSNStudent(idx, 'standard', e.target.value)} className="bg-slate-50 border-none p-2 rounded-lg text-xs font-bold w-24">
+                               {STANDARDS.map(std => <option key={std} value={std}>{std === 'બાલવાટિકા' ? 'બાલ' : `ધો. ${std}`}</option>)}
+                            </select>
+                            {!isReadOnly && <button onClick={() => removeCWSNStudent(idx)} className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>}
+                         </div>
+                      ))}
+                      {cwsn.students.length === 0 && <p className="text-[10px] text-slate-400 text-center py-10 italic">કોઈ નામ ઉમેરેલ નથી</p>}
+                   </div>
+                </div>
+             </div>
+          </div>
         )}
       </div>
     </div>

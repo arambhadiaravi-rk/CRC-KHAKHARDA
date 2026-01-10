@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { School, Teacher, UserRole, PhysicalFacilities, SMCMeeting } from '../types';
+import { School, Teacher, UserRole, SMCMeeting, LibraryMonthlyRecord, LibraryData } from '../types';
 
 interface SchoolManagementProps {
   school: School;
@@ -16,11 +16,17 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
   
   const isReadOnly = userRole === 'brc_admin' || userRole === 'dpc_admin' || userRole === 'crc_viewer';
 
+  const ACADEMIC_MONTHS = [
+    'જૂન-૨૦૨૫', 'જુલાઈ-૨૦૨૫', 'ઓગસ્ટ-૨૦૨૫', 'સપ્ટેમ્બર-૨૦૨૫', 'ઓક્ટોબર-૨૦૨૫', 
+    'નવેમ્બર-૨૦૨૫', 'ડિસેમ્બર-૨૦૨૫', 'જાન્યુઆરી-૨૦૨૬', 'ફેબ્રુઆરી-૨૦૨૬', 'માર્ચ-૨૦૨૬', 'એપ્રિલ-૨૦૨૬'
+  ];
+
   const subTabs = [
     { id: 'profile', label: 'પ્રોફાઇલ', icon: '🆔' },
     { id: 'teachers', label: 'શિક્ષકો', icon: '👨‍🏫' },
     { id: 'facilities', label: 'સુવિધાઓ', icon: '🛠️' },
     { id: 'smc', label: 'SMC બેઠક', icon: '🤝' },
+    { id: 'library', label: 'પુસ્તકાલય', icon: '📚' },
     { id: 'gallery', label: 'ગેલેરી', icon: '🖼️' }
   ];
 
@@ -47,6 +53,24 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
         [field]: value
       }
     }));
+  };
+
+  const updateLibraryMonthly = (month: string, field: 'teacherBooks' | 'studentBooks', value: number | '') => {
+    const currentLib = editSchool.libraryData || { totalBooks: '', monthlyRecords: [] };
+    const records = [...currentLib.monthlyRecords];
+    const idx = records.findIndex(r => r.month === month);
+    
+    if (idx >= 0) {
+      records[idx] = { ...records[idx], [field]: value };
+    } else {
+      records.push({ 
+        month, 
+        teacherBooks: field === 'teacherBooks' ? value : '', 
+        studentBooks: field === 'studentBooks' ? value : '' 
+      });
+    }
+    
+    setEditSchool({ ...editSchool, libraryData: { ...currentLib, monthlyRecords: records } });
   };
 
   return (
@@ -133,7 +157,10 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
             {(editSchool.teachers || []).map((t, idx) => (
               <div key={t.id} className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 relative grid grid-cols-1 md:grid-cols-4 gap-4 shadow-sm">
                 <div className="md:col-span-4 flex justify-between items-center border-b border-slate-200 pb-2 mb-2">
-                   <span className="bg-slate-900 text-white w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs">{idx + 1}</span>
+                   <div className="flex items-center gap-4">
+                     <span className="bg-slate-900 text-white w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs">{idx + 1}</span>
+                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">શિક્ષકની વિગત</span>
+                   </div>
                    {!isReadOnly && <button onClick={() => setEditSchool({...editSchool, teachers: (editSchool.teachers || []).filter(x => x.id !== t.id)})} className="text-red-500 text-[10px] font-black uppercase hover:underline">કાઢી નાખો</button>}
                 </div>
                 <div>
@@ -141,7 +168,25 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
                   <input disabled={isReadOnly} value={t.name} onChange={e => {
                     const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, name: e.target.value.toUpperCase()} : item);
                     setEditSchool({...editSchool, teachers: updated});
-                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500"/>
+                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500" placeholder="પૂરું નામ"/>
+                </div>
+                <div>
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">જાતિ (Gender)</label>
+                  <select disabled={isReadOnly} value={t.gender} onChange={e => {
+                    const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, gender: e.target.value as any} : item);
+                    setEditSchool({...editSchool, teachers: updated});
+                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500">
+                    <option value="">-- પસંદ કરો --</option>
+                    <option value="પુરુષ">પુરુષ</option>
+                    <option value="સ્ત્રી">સ્ત્રી</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">હોદ્દો (Designation)</label>
+                  <input disabled={isReadOnly} value={t.designation} onChange={e => {
+                    const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, designation: e.target.value.toUpperCase()} : item);
+                    setEditSchool({...editSchool, teachers: updated});
+                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500" placeholder="HTAT / આચાર્ય / શિક્ષક"/>
                 </div>
                 <div>
                   <label className="text-[9px] font-black text-slate-400 uppercase ml-1">જન્મતારીખ (DOB)</label>
@@ -155,24 +200,24 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
                   <input disabled={isReadOnly} value={t.mobile} onChange={e => {
                     const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, mobile: e.target.value} : item);
                     setEditSchool({...editSchool, teachers: updated});
-                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500"/>
+                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500" placeholder="10 આંકડાનો નંબર"/>
                 </div>
                 <div>
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">હોદ્દો (Designation)</label>
-                  <input disabled={isReadOnly} value={t.designation} onChange={e => {
-                    const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, designation: e.target.value.toUpperCase()} : item);
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">આધાર નંબર</label>
+                  <input disabled={isReadOnly} value={t.aadhaar} onChange={e => {
+                    const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, aadhaar: e.target.value} : item);
                     setEditSchool({...editSchool, teachers: updated});
-                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500"/>
+                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500" placeholder="12 આંકડાનો નંબર"/>
                 </div>
                 <div>
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">ખાતામાં દાખલ તારીખ</label>
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">પ્રથમ નિમણૂક તારીખ</label>
                   <input type="date" disabled={isReadOnly} value={t.joiningServiceDate} onChange={e => {
                     const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, joiningServiceDate: e.target.value} : item);
                     setEditSchool({...editSchool, teachers: updated});
                   }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500"/>
                 </div>
                 <div>
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">શાળામાં દાખલ તારીખ</label>
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">હાજર શાળામાં તારીખ</label>
                   <input type="date" disabled={isReadOnly} value={t.joiningSchoolDate} onChange={e => {
                     const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, joiningSchoolDate: e.target.value} : item);
                     setEditSchool({...editSchool, teachers: updated});
@@ -181,25 +226,20 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
                 <div>
                   <label className="text-[9px] font-black text-slate-400 uppercase ml-1">વિભાગ (Section)</label>
                   <select disabled={isReadOnly} value={t.section} onChange={e => {
-                    const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, section: e.target.value as any, subject: e.target.value === 'પ્રાથમિક' ? '' : item.subject} : item);
+                    const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, section: e.target.value as any} : item);
                     setEditSchool({...editSchool, teachers: updated});
-                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm">
+                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500">
                     <option value="">-- પસંદ કરો --</option>
                     <option value="પ્રાથમિક">પ્રાથમિક (1-5)</option>
                     <option value="ઉચ્ચ પ્રાથમિક">ઉચ્ચ પ્રાથમિક (6-8)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">વિષય (Subject)</label>
-                  <select 
-                    disabled={isReadOnly || t.section !== 'ઉચ્ચ પ્રાથમિક'} 
-                    value={t.subject} 
-                    onChange={e => {
-                      const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, subject: e.target.value as any} : item);
-                      setEditSchool({...editSchool, teachers: updated});
-                    }} 
-                    className={`w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm ${t.section !== 'ઉચ્ચ પ્રાથમિક' ? 'opacity-30 cursor-not-allowed' : ''}`}
-                  >
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">મુખ્ય વિષય</label>
+                  <select disabled={isReadOnly} value={t.subject} onChange={e => {
+                    const updated = (editSchool.teachers || []).map(item => item.id === t.id ? {...item, subject: e.target.value as any} : item);
+                    setEditSchool({...editSchool, teachers: updated});
+                  }} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-500">
                     <option value="">-- પસંદ કરો --</option>
                     <option value="ભાષા">ભાષા</option>
                     <option value="ગણિત-વિજ્ઞાન">ગણિત-વિજ્ઞાન</option>
@@ -213,106 +253,129 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
 
         {activeTab === 'facilities' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Section: Basic & Sanitation */}
             <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-6 shadow-sm">
-               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 border-l-4 border-blue-500 pl-3">ઓરડા અને શૌચાલય</h4>
+               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 border-l-4 border-blue-500 pl-3">ઓરડા અને સ્વચ્છતા (Basic & Sanitation)</h4>
                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
+                  <div>
                     <label className="text-[9px] font-black text-slate-500 uppercase ml-1">શાળાના કુલ ઓરડા</label>
-                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.roomsCount || ''} onChange={e => updateNested('facilities', 'roomsCount', parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
+                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.roomsCount || ''} onChange={e => updateNested('facilities', 'roomsCount', e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કુમાર યુરિનલ</label>
-                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.boysUrinals || ''} onChange={e => updateNested('facilities', 'boysUrinals', parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કન્યા યુરિનલ</label>
-                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.girlsUrinals || ''} onChange={e => updateNested('facilities', 'girlsUrinals', parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કુમાર શૌચાલય (Toilet)</label>
-                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.boysToilets || ''} onChange={e => updateNested('facilities', 'boysToilets', parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કન્યા શૌચાલય (Toilet)</label>
-                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.girlsToilets || ''} onChange={e => updateNested('facilities', 'girlsToilets', parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
-                  </div>
-                  <div className="col-span-2">
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">CWSN ટોયલેટ સુવિધા?</label>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">CWSN શૌચાલય</label>
                     <select disabled={isReadOnly} value={editSchool.facilities?.hasCWSNToilet || ''} onChange={e => updateNested('facilities', 'hasCWSNToilet', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
                        <option value="">-- પસંદ કરો --</option>
-                       <option value="હા">હા (Yes)</option>
-                       <option value="ના">ના (No)</option>
+                       <option value="હા">હા</option>
+                       <option value="ના">ના</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-emerald-600 uppercase ml-1">કુમાર શૌચાલય</label>
+                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.boysToilets || ''} onChange={e => updateNested('facilities', 'boysToilets', e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-pink-600 uppercase ml-1">કન્યા શૌચાલય</label>
+                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.girlsToilets || ''} onChange={e => updateNested('facilities', 'girlsToilets', e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-emerald-600 uppercase ml-1">કુમાર યુરિનલ</label>
+                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.boysUrinals || ''} onChange={e => updateNested('facilities', 'boysUrinals', e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-pink-600 uppercase ml-1">કન્યા યુરિનલ</label>
+                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.girlsUrinals || ''} onChange={e => updateNested('facilities', 'girlsUrinals', e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
                   </div>
                </div>
             </div>
 
+            {/* Section: Technology & Labs */}
             <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-6 shadow-sm">
-               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 border-l-4 border-emerald-500 pl-3">લેબ, પાણી અને અન્ય</h4>
-               <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કમ્પ્યુટર લેબ છે?</label>
-                      <select disabled={isReadOnly} value={editSchool.facilities?.hasComputerLab || ''} onChange={e => updateNested('facilities', 'hasComputerLab', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-xs">
-                         <option value="">-- પસંદ કરો --</option>
-                         <option value="હા">હા</option>
-                         <option value="ના">ના</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase ml-1">LBD લેબ સુવિધા?</label>
-                      <select disabled={isReadOnly} value={editSchool.facilities?.hasLBDLab || ''} onChange={e => updateNested('facilities', 'hasLBDLab', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-xs">
-                         <option value="">-- પસંદ કરો --</option>
-                         <option value="હા">હા</option>
-                         <option value="ના">ના</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase ml-1">અન્ય કોઈ લેબ છે?</label>
-                      <select disabled={isReadOnly} value={editSchool.facilities?.hasOtherLab || ''} onChange={e => updateNested('facilities', 'hasOtherLab', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-xs">
-                         <option value="">-- પસંદ કરો --</option>
-                         <option value="હા">હા</option>
-                         <option value="ના">ના</option>
-                      </select>
-                    </div>
-                    {editSchool.facilities?.hasOtherLab === 'હા' && (
-                      <div>
-                        <label className="text-[9px] font-black text-slate-500 uppercase ml-1">અન્ય લેબની વિગત</label>
-                        <input disabled={isReadOnly} value={editSchool.facilities?.otherLabDetails || ''} onChange={e => updateNested('facilities', 'otherLabDetails', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-xs outline-none focus:ring-1 focus:ring-emerald-500" placeholder="લેબનું નામ..."/>
-                      </div>
-                    )}
+               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 border-l-4 border-indigo-500 pl-3">ટેકનોલોજી અને લેબ (Technology & Labs)</h4>
+               <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કમ્પ્યુટર લેબ</label>
+                    <select disabled={isReadOnly} value={editSchool.facilities?.hasComputerLab || ''} onChange={e => updateNested('facilities', 'hasComputerLab', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
+                       <option value="">-- પસંદ કરો --</option>
+                       <option value="હા">હા</option>
+                       <option value="ના">ના</option>
+                    </select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કુલ કમ્પ્યુટર સંખ્યા</label>
-                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.computerCount || ''} onChange={e => updateNested('facilities', 'computerCount', parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કુલ કમ્પ્યુટર</label>
+                    <input type="number" disabled={isReadOnly} value={editSchool.facilities?.computerCount || ''} onChange={e => updateNested('facilities', 'computerCount', e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"/>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">ઇન્ટરનેટ કનેક્શન છે?</label>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">ઇન્ટરનેટ સુવિધા</label>
                     <select disabled={isReadOnly} value={editSchool.facilities?.hasInternet || ''} onChange={e => updateNested('facilities', 'hasInternet', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
                        <option value="">-- પસંદ કરો --</option>
                        <option value="હા">હા</option>
                        <option value="ના">ના</option>
                     </select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase ml-1">RO પ્લાન્ટ સુવિધા?</label>
-                      <select disabled={isReadOnly} value={editSchool.facilities?.hasRO || ''} onChange={e => updateNested('facilities', 'hasRO', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-xs">
-                         <option value="">-- પસંદ કરો --</option>
-                         <option value="હા">હા</option>
-                         <option value="ના">ના</option>
-                      </select>
+                  <div>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">LBD લેબ</label>
+                    <select disabled={isReadOnly} value={editSchool.facilities?.hasLBDLab || ''} onChange={e => updateNested('facilities', 'hasLBDLab', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
+                       <option value="">-- પસંદ કરો --</option>
+                       <option value="હા">હા</option>
+                       <option value="ના">ના</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">અન્ય કોઈ લેબ</label>
+                    <select disabled={isReadOnly} value={editSchool.facilities?.hasOtherLab || ''} onChange={e => updateNested('facilities', 'hasOtherLab', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
+                       <option value="">-- પસંદ કરો --</option>
+                       <option value="હા">હા</option>
+                       <option value="ના">ના</option>
+                    </select>
+                  </div>
+                  {editSchool.facilities?.hasOtherLab === 'હા' && (
+                    <div className="col-span-2">
+                       <label className="text-[9px] font-black text-slate-500 uppercase ml-1">લેબની વિગત</label>
+                       <input type="text" disabled={isReadOnly} value={editSchool.facilities?.otherLabDetails || ''} onChange={e => updateNested('facilities', 'otherLabDetails', e.target.value.toUpperCase())} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold" placeholder="EX: SCIENCE LAB / MATH LAB"/>
                     </div>
-                    <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase ml-1">વેન્ડિંગ મશીન છે?</label>
-                      <select disabled={isReadOnly} value={editSchool.facilities?.hasVendingMachine || ''} onChange={e => updateNested('facilities', 'hasVendingMachine', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-xs">
-                         <option value="">-- પસંદ કરો --</option>
-                         <option value="હા">હા</option>
-                         <option value="ના">ના</option>
-                      </select>
-                    </div>
+                  )}
+               </div>
+            </div>
+
+            {/* Section: Water & Special Equipment */}
+            <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-6 shadow-sm">
+               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 border-l-4 border-cyan-500 pl-3">પાણી અને ખાસ સુવિધા (Water & Special)</h4>
+               <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">પીવાનું પાણી</label>
+                    <select disabled={isReadOnly} value={editSchool.facilities?.hasDrinkingWater || ''} onChange={e => updateNested('facilities', 'hasDrinkingWater', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
+                       <option value="">-- પસંદ કરો --</option>
+                       <option value="હા">હા</option>
+                       <option value="ના">ના</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">પાણીનો સ્ત્રોત</label>
+                    <input type="text" disabled={isReadOnly} value={editSchool.facilities?.drinkingWaterSource || ''} onChange={e => updateNested('facilities', 'drinkingWaterSource', e.target.value.toUpperCase())} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold" placeholder="EX: GWSSB / BOREWELL"/>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">R.O. પ્લાન્ટ</label>
+                    <select disabled={isReadOnly} value={editSchool.facilities?.hasRO || ''} onChange={e => updateNested('facilities', 'hasRO', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
+                       <option value="">-- પસંદ કરો --</option>
+                       <option value="હા">હા</option>
+                       <option value="ના">ના</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">વેન્ડિંગ મશીન</label>
+                    <select disabled={isReadOnly} value={editSchool.facilities?.hasVendingMachine || ''} onChange={e => updateNested('facilities', 'hasVendingMachine', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
+                       <option value="">-- પસંદ કરો --</option>
+                       <option value="હા">હા</option>
+                       <option value="ના">ના</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">ઇન્સિનેરેટર</label>
+                    <select disabled={isReadOnly} value={editSchool.facilities?.hasIncinerator || ''} onChange={e => updateNested('facilities', 'hasIncinerator', e.target.value)} className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold">
+                       <option value="">-- પસંદ કરો --</option>
+                       <option value="હા">હા</option>
+                       <option value="ના">ના</option>
+                    </select>
                   </div>
                </div>
             </div>
@@ -354,7 +417,7 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
                                     disabled={isReadOnly} 
                                     value={m.date} 
                                     onChange={e => {
-                                       const updated = (editSchool.smcMeetings || []).map(item => item.id === m.id ? {...item, date: e.target.value} : item);
+                                       const updated: SMCMeeting[] = (editSchool.smcMeetings || []).map(item => item.id === m.id ? {...item, date: e.target.value} : item);
                                        setEditSchool({...editSchool, smcMeetings: updated});
                                     }} 
                                     className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
@@ -366,7 +429,9 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
                                     disabled={isReadOnly} 
                                     value={m.membersCount} 
                                     onChange={e => {
-                                       const updated = (editSchool.smcMeetings || []).map(item => item.id === m.id ? {...item, membersCount: parseInt(e.target.value) || ''} : item);
+                                       const updated: SMCMeeting[] = (editSchool.smcMeetings || []).map(item => 
+                                          item.id === m.id ? {...item, membersCount: e.target.value === '' ? '' : parseInt(e.target.value)} : item
+                                       );
                                        setEditSchool({...editSchool, smcMeetings: updated});
                                     }} 
                                     placeholder="સભ્યોની સંખ્યા..."
@@ -385,13 +450,74 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
                               )}
                            </tr>
                         ))}
-                        {(!editSchool.smcMeetings || editSchool.smcMeetings.length === 0) && (
-                           <tr>
-                              <td colSpan={isReadOnly ? 3 : 4} className="p-10 text-center italic text-slate-400 font-bold uppercase tracking-widest text-[10px]">કોઈ બેઠક ડેટા નથી</td>
-                           </tr>
-                        )}
                      </tbody>
                   </table>
+               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'library' && (
+          <div className="space-y-8">
+            <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+               <div className="mb-8">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3 mb-4">પુસ્તકાલયની મૂળભૂત વિગત</h4>
+                  <div className="max-w-xs">
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">કુલ પુસ્તકોની સંખ્યા</label>
+                    <input 
+                      type="number" 
+                      disabled={isReadOnly} 
+                      value={editSchool.libraryData?.totalBooks || ''} 
+                      onChange={e => updateNested('libraryData', 'totalBooks', e.target.value === '' ? '' : parseInt(e.target.value))} 
+                      className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold"
+                      placeholder="0"
+                    />
+                  </div>
+               </div>
+
+               <div>
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3 mb-6">માસવાર વાંચન વિગત (જૂન-૨૦૨૫ થી એપ્રિલ-૨૦૨૬)</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs bg-white rounded-3xl overflow-hidden shadow-sm">
+                       <thead>
+                          <tr className="bg-indigo-600 text-white">
+                             <th className="p-5 font-black uppercase">માસ (MONTH)</th>
+                             <th className="p-5 font-black uppercase text-center bg-indigo-700">શિક્ષકોએ વાંચેલ પુસ્તકો</th>
+                             <th className="p-5 font-black uppercase text-center bg-indigo-800">વિદ્યાર્થીઓએ વાંચેલ પુસ્તકો</th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-100">
+                          {ACADEMIC_MONTHS.map(month => {
+                            const record = editSchool.libraryData?.monthlyRecords.find(r => r.month === month) || { teacherBooks: '', studentBooks: '' };
+                            return (
+                              <tr key={month} className="hover:bg-indigo-50/30 transition-colors">
+                                <td className="p-5 font-black text-slate-700 italic">{month}</td>
+                                <td className="p-3">
+                                  <input 
+                                    type="number" 
+                                    disabled={isReadOnly} 
+                                    value={record.teacherBooks}
+                                    onChange={e => updateLibraryMonthly(month, 'teacherBooks', e.target.value === '' ? '' : parseInt(e.target.value))}
+                                    className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl font-bold text-center outline-none focus:bg-white focus:ring-1 focus:ring-indigo-200" 
+                                    placeholder="0"
+                                  />
+                                </td>
+                                <td className="p-3">
+                                  <input 
+                                    type="number" 
+                                    disabled={isReadOnly} 
+                                    value={record.studentBooks}
+                                    onChange={e => updateLibraryMonthly(month, 'studentBooks', e.target.value === '' ? '' : parseInt(e.target.value))}
+                                    className="w-full bg-slate-50 border border-slate-100 p-3 rounded-xl font-bold text-center outline-none focus:bg-white focus:ring-1 focus:ring-indigo-200" 
+                                    placeholder="0"
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                       </tbody>
+                    </table>
+                  </div>
                </div>
             </div>
           </div>
@@ -413,7 +539,6 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
                             ...prev,
                             gallery: updatedGallery
                           }));
-                          // Auto update on gallery changes since they are immediate actions
                           onUpdate({...editSchool, gallery: updatedGallery});
                         };
                         reader.readAsDataURL(file);
@@ -424,22 +549,20 @@ const SchoolManagement: React.FC<SchoolManagementProps> = ({ school, onUpdate, u
                  </>
                )}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+            {/* Gallery Display */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                {(editSchool.gallery || []).map((img, i) => (
-                 <div key={i} className="aspect-square bg-white rounded-2xl overflow-hidden border border-slate-200 relative group shadow-sm">
+                 <div key={i} className="aspect-square rounded-2xl overflow-hidden relative group">
                     <img src={img} className="w-full h-full object-cover" />
                     {!isReadOnly && (
-                      <button onClick={() => {
-                        const updatedGallery = (editSchool.gallery || []).filter((_, idx) => idx !== i);
-                        setEditSchool({...editSchool, gallery: updatedGallery});
-                        onUpdate({...editSchool, gallery: updatedGallery});
-                      }} className="absolute top-1 right-1 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                      </button>
+                       <button onClick={() => {
+                          const updated = (editSchool.gallery || []).filter((_, idx) => idx !== i);
+                          setEditSchool({...editSchool, gallery: updated});
+                          onUpdate({...editSchool, gallery: updated});
+                       }} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                     )}
                  </div>
                ))}
-               {!editSchool.gallery?.length && <div className="col-span-full py-16 text-center text-slate-300 font-bold italic border-2 border-dashed border-slate-200 rounded-3xl uppercase text-[10px] tracking-widest">કોઈ ફોટા ઉપલબ્ધ નથી</div>}
             </div>
           </div>
         )}

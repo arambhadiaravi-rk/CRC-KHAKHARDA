@@ -17,7 +17,8 @@ const Circulars: React.FC<CircularsProps> = ({ circulars, onAdd, onRemove, userR
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isFullAdmin = userRole === 'crc_admin';
+  // CRC, BRC and DPC can all upload circulars
+  const canUpload = userRole === 'crc_admin' || userRole === 'brc_admin' || userRole === 'dpc_admin';
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -41,7 +42,8 @@ const Circulars: React.FC<CircularsProps> = ({ circulars, onAdd, onRemove, userR
         description,
         date: new Date().toLocaleDateString('gu-IN'),
         pdfData: base64Data,
-        fileName: file.name
+        fileName: file.name,
+        uploadedBy: userRole?.toUpperCase().replace('_', ' ')
       };
       onAdd(newCircular);
       setTitle('');
@@ -67,10 +69,10 @@ const Circulars: React.FC<CircularsProps> = ({ circulars, onAdd, onRemove, userR
       <div className="flex justify-between items-center mb-8">
         <div>
           <h2 className="text-3xl font-black text-slate-800 tracking-tight">શૈક્ષણિક પરિપત્રો</h2>
-          <p className="text-slate-500 font-bold text-sm">ક્લસ્ટર દ્વારા બહાર પાડવામાં આવેલા અગત્યના પરિપત્રો.</p>
+          <p className="text-slate-500 font-bold text-sm">ક્લસ્ટર તથા ઓથોરિટી દ્વારા બહાર પાડવામાં આવેલા અગત્યના પરિપત્રો.</p>
         </div>
         
-        {isFullAdmin && (
+        {canUpload && (
           <button 
             onClick={() => setShowModal(true)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl shadow-emerald-100 flex items-center gap-2 transition-all active:scale-95"
@@ -92,7 +94,10 @@ const Circulars: React.FC<CircularsProps> = ({ circulars, onAdd, onRemove, userR
             <p className="text-xs text-slate-500 font-bold mb-4 line-clamp-2">{circular.description || "કોઈ વધારાની વિગત નથી."}</p>
             
             <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-              <span className="text-[10px] font-black text-slate-400">{circular.date}</span>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-slate-400">{circular.date}</span>
+                {circular.uploadedBy && <span className="text-[8px] font-black text-blue-400 uppercase tracking-tighter">BY: {circular.uploadedBy}</span>}
+              </div>
               <button 
                 onClick={() => handleDownload(circular)}
                 className="text-emerald-600 text-xs font-black hover:underline flex items-center gap-1"
@@ -102,7 +107,7 @@ const Circulars: React.FC<CircularsProps> = ({ circulars, onAdd, onRemove, userR
               </button>
             </div>
 
-            {isFullAdmin && (
+            {canUpload && (
               <button 
                 onClick={() => onRemove(circular.id)}
                 className="absolute top-4 right-4 text-slate-200 hover:text-red-500 transition-colors"

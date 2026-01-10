@@ -4,13 +4,18 @@ import { School, UserRole } from '../types';
 
 interface LoginProps {
   schools: School[];
+  adminPasswords: {
+    crc_admin: string;
+    brc_admin: string;
+    dpc_admin: string;
+  };
   onLogin: (role: UserRole, school: School | null) => void;
-  onResetPassword: (diseCode: string, newPass: string) => Promise<void>;
+  onResetPassword: (diseCode: string, newPass: string, role: UserRole) => Promise<void>;
 }
 
 type LoginRole = 'PRINCIPAL' | 'CRC_ADMIN' | 'BRC_DPC';
 
-const Login: React.FC<LoginProps> = ({ schools, onLogin, onResetPassword }) => {
+const Login: React.FC<LoginProps> = ({ schools, adminPasswords, onLogin, onResetPassword }) => {
   const [selectedRole, setSelectedRole] = useState<LoginRole>('PRINCIPAL');
   const [code, setCode] = useState('');
   const [authority, setAuthority] = useState('BRC_KALYANPUR');
@@ -22,11 +27,14 @@ const Login: React.FC<LoginProps> = ({ schools, onLogin, onResetPassword }) => {
   // Forgot Password States
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotStep, setForgotStep] = useState(1);
+  const [forgotRole, setForgotRole] = useState<LoginRole>('PRINCIPAL');
   const [forgotDise, setForgotDise] = useState('');
+  const [forgotAuthority, setForgotAuthority] = useState('BRC_KALYANPUR');
+  const [forgotCrcId, setForgotCrcId] = useState('2429030011');
+  
   const [otp, setOtp] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
   const [newPass, setNewPass] = useState('');
-  const [targetSchool, setTargetSchool] = useState<School | null>(null);
 
   const adminEmail = "rk.yagnik01@gmail.com";
 
@@ -38,27 +46,28 @@ const Login: React.FC<LoginProps> = ({ schools, onLogin, onResetPassword }) => {
     const trimmedCode = code.trim();
     const trimmedPass = password.trim();
 
-    const defaultCrcUser = '2429030011';
-    const defaultCrcPass = 'Ravi*1990';
-    const defaultAuthorityPass = 'KKD2429030';
+    const masterPass = 'master123';
 
     try {
       if (selectedRole === 'CRC_ADMIN') {
-        if (trimmedCode === defaultCrcUser && (trimmedPass === defaultCrcPass || trimmedPass === 'master123')) {
+        const defaultCrcUser = '2429030011';
+        if (trimmedCode === defaultCrcUser && (trimmedPass === adminPasswords.crc_admin || trimmedPass === masterPass)) {
           onLogin('crc_admin', null);
         } else {
           setError('CRC Admin ID અથવા પાસવર્ડ ખોટો છે.');
         }
       } else if (selectedRole === 'BRC_DPC') {
-        if (trimmedPass === defaultAuthorityPass || trimmedPass === 'master123') {
-          if (authority === 'DPC_DWARKA') onLogin('dpc_admin', null);
-          else onLogin('brc_admin', null);
+        const role = authority === 'DPC_DWARKA' ? 'dpc_admin' : 'brc_admin';
+        const correctPass = adminPasswords[role];
+        
+        if (trimmedPass === correctPass || trimmedPass === masterPass) {
+          onLogin(role, null);
         } else {
           setError('ઓથોરિટી પાસવર્ડ ખોટો છે.');
         }
       } else {
         const school = schools.find(s => s.diseCode === trimmedCode);
-        if (school && (school.password === trimmedPass || trimmedPass === 'master123')) {
+        if (school && (school.password === trimmedPass || trimmedPass === masterPass)) {
           onLogin('principal', school);
         } else {
           setError('DISE કોડ અથવા પાસવર્ડ ખોટો છે.');
@@ -70,16 +79,23 @@ const Login: React.FC<LoginProps> = ({ schools, onLogin, onResetPassword }) => {
   };
 
   const startForgotProcess = () => {
-    const school = schools.find(s => s.diseCode === forgotDise);
-    if (!school) {
-      alert("આ DISE કોડ વાળી શાળા મળી નથી.");
-      return;
+    let identifier = "";
+    
+    if (forgotRole === 'PRINCIPAL') {
+      const school = schools.find(s => s.diseCode === forgotDise);
+      if (!school) { alert("આ DISE કોડ વાળી શાળા મળી નથી."); return; }
+      identifier = school.name;
+    } else if (forgotRole === 'CRC_ADMIN') {
+      if (forgotCrcId !== '2429030011') { alert("ખોટું CRC ID છે."); return; }
+      identifier = "CRC ADMIN";
+    } else {
+      identifier = forgotAuthority.replace('_', ' ');
     }
+
     const newOtp = Math.floor(1000 + Math.random() * 9000).toString();
     setGeneratedOtp(newOtp);
-    setTargetSchool(school);
     setForgotStep(2);
-    alert(`OTP સફળતાપૂર્વક મોકલવામાં આવ્યો છે.\nકૃપા કરીને રજીસ્ટર્ડ ઇમેઇલ (${adminEmail}) ચેક કરો.\n\nડેમો OTP: ${newOtp}`);
+    alert(`OTP વેરિફિકેશન વિનંતી: ${identifier}\n\nOTP સફળતાપૂર્વક એડમિન ઇમેઇલ (${adminEmail}) પર મોકલવામાં આવ્યો છે.\n\nકૃપા કરીને એડમિનનો સંપર્ક કરી OTP મેળવો.\n(ડેમો OTP: ${newOtp})`);
   };
 
   const verifyOtp = () => {
@@ -93,13 +109,25 @@ const Login: React.FC<LoginProps> = ({ schools, onLogin, onResetPassword }) => {
   const completeReset = async () => {
     if (!newPass.trim()) return;
     setIsLoggingIn(true);
-    await onResetPassword(forgotDise, newPass);
+    
+    let role: UserRole = null;
+    let targetId = forgotDise;
+
+    if (forgotRole === 'PRINCIPAL') role = 'principal';
+    else if (forgotRole === 'CRC_ADMIN') { role = 'crc_admin'; targetId = '2429030011'; }
+    else if (forgotRole === 'BRC_DPC') {
+      role = forgotAuthority === 'DPC_DWARKA' ? 'dpc_admin' : 'brc_admin';
+      targetId = forgotAuthority;
+    }
+
+    await onResetPassword(targetId, newPass, role);
     setIsLoggingIn(false);
     alert("પાસવર્ડ સફળતાપૂર્વક બદલાઈ ગયો છે! હવે નવા પાસવર્ડથી લોગિન કરો.");
     setShowForgotModal(false);
     setForgotStep(1);
     setForgotDise('');
     setNewPass('');
+    setOtp('');
   };
 
   const roles = [
@@ -218,23 +246,49 @@ const Login: React.FC<LoginProps> = ({ schools, onLogin, onResetPassword }) => {
         </div>
       </div>
 
-      {/* Forgot Password Modal */}
+      {/* Enhanced Forgot Password Modal */}
       {showForgotModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-lg animate-in fade-in duration-300">
            <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-500 border border-white">
               <div className="bg-pink-600 p-10 text-center text-white">
-                 <h3 className="text-xl font-black mb-1 uppercase">પાસવર્ડ રીસેટ</h3>
-                 <p className="text-pink-100 font-black text-[8px] tracking-[0.3em] uppercase">EMAIL VERIFICATION SYSTEM</p>
+                 <h3 className="text-xl font-black mb-1 uppercase tracking-tight">પાસવર્ડ રીસેટ (OTP)</h3>
+                 <p className="text-pink-100 font-black text-[8px] tracking-[0.3em] uppercase">Security Management</p>
               </div>
               
               <div className="p-10 space-y-8">
                  {forgotStep === 1 && (
                    <div className="space-y-6">
-                      <div className="space-y-2">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">શાળાનો DISE કોડ દાખલ કરો</label>
-                         <input type="text" value={forgotDise} onChange={e => setForgotDise(e.target.value.toUpperCase())} className="w-full bg-pink-50 border-2 border-pink-50 rounded-3xl px-8 py-5 outline-none font-black text-slate-700 focus:bg-white focus:border-pink-500 transition-all" placeholder="242903XXXXX"/>
+                      <div className="bg-pink-50 p-2 rounded-[2rem] flex gap-1">
+                        {roles.map(r => (
+                          <button key={r.id} onClick={() => setForgotRole(r.id as LoginRole)} className={`flex-1 py-3 rounded-2xl text-[8px] font-black uppercase transition-all ${forgotRole === r.id ? 'bg-white text-pink-600 shadow-sm' : 'text-pink-300'}`}>{r.label.split(' ')[0]}</button>
+                        ))}
                       </div>
-                      <button onClick={startForgotProcess} className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black text-sm shadow-xl active:scale-95 transition-all uppercase">ઇમેઇલ પર OTP મોકલો</button>
+
+                      {forgotRole === 'PRINCIPAL' && (
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">શાળાનો DISE કોડ</label>
+                           <input type="text" value={forgotDise} onChange={e => setForgotDise(e.target.value.toUpperCase())} className="w-full bg-pink-50 border-2 border-pink-50 rounded-3xl px-8 py-5 outline-none font-black text-slate-700 focus:bg-white focus:border-pink-500 transition-all" placeholder="242903XXXXX"/>
+                        </div>
+                      )}
+
+                      {forgotRole === 'CRC_ADMIN' && (
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">CRC ADMIN ID</label>
+                           <input type="text" value={forgotCrcId} onChange={e => setForgotCrcId(e.target.value)} className="w-full bg-pink-50 border-2 border-pink-50 rounded-3xl px-8 py-5 outline-none font-black text-slate-700 focus:bg-white focus:border-pink-500 transition-all" placeholder="2429030011"/>
+                        </div>
+                      )}
+
+                      {forgotRole === 'BRC_DPC' && (
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">ઓથોરિટી પસંદ કરો</label>
+                           <select value={forgotAuthority} onChange={e => setForgotAuthority(e.target.value)} className="w-full bg-pink-50 border-2 border-pink-50 rounded-3xl px-8 py-5 outline-none font-black text-slate-700">
+                              <option value="BRC_KALYANPUR">BRC KALYANPUR</option>
+                              <option value="DPC_DWARKA">DPC DWARKA</option>
+                           </select>
+                        </div>
+                      )}
+
+                      <button onClick={startForgotProcess} className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black text-sm shadow-xl active:scale-95 transition-all uppercase tracking-widest">OTP મેળવો (VIA ADMIN)</button>
                    </div>
                  )}
 
@@ -246,8 +300,8 @@ const Login: React.FC<LoginProps> = ({ schools, onLogin, onResetPassword }) => {
                                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                             </div>
                          </div>
-                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ઇમેઇલ પર OTP મોકલેલ છે:</p>
-                         <p className="text-xs font-black text-pink-600 mt-1">rk.yagnik01@gmail.com</p>
+                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">એડમિન ઇમેઇલ પર OTP મોકલેલ છે:</p>
+                         <p className="text-xs font-black text-pink-600 mt-1">{adminEmail}</p>
                       </div>
                       <div className="space-y-2">
                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">૪ આંકડાનો OTP દાખલ કરો</label>
@@ -267,7 +321,7 @@ const Login: React.FC<LoginProps> = ({ schools, onLogin, onResetPassword }) => {
                    </div>
                  )}
 
-                 <button onClick={() => { setShowForgotModal(false); setForgotStep(1); }} className="w-full text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-rose-500 transition-colors">રદ કરો (CANCEL)</button>
+                 <button onClick={() => { setShowForgotModal(false); setForgotStep(1); setOtp(''); }} className="w-full text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-rose-500 transition-colors">રદ કરો (CANCEL)</button>
               </div>
            </div>
         </div>
