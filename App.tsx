@@ -33,7 +33,7 @@ const DEFAULT_ADMIN_PASSWORDS = {
   dpc_admin: 'KKD2429030'
 };
 
-const STORAGE_KEY = 'crc_khakharda_master_v1';
+const STORAGE_KEY = 'crc_khakharda_master_v3';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('schools');
@@ -43,7 +43,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   
-  // Data State initialized from localStorage
+  // Data States
   const [schools, setSchools] = useState<School[]>(MASTER_SCHOOLS);
   const [records, setRecords] = useState<DataRecord[]>([]);
   const [circulars, setCirculars] = useState<Circular[]>([]);
@@ -56,20 +56,16 @@ const App: React.FC = () => {
     return parseInt(localStorage.getItem("suggestions_last_viewed") || '0');
   });
 
-  // Load Initial Data
+  // Load Data
   useEffect(() => {
-    const savedData = localStorage.getItem(STORAGE_KEY);
-    if (savedData) {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
       try {
-        const data = JSON.parse(savedData);
-        
-        // Merge with MASTER_SCHOOLS to ensure IDs and Core Info remain consistent
+        const data = JSON.parse(saved);
         const mergedSchools = MASTER_SCHOOLS.map(ms => {
-          const saved = (data.schools || []).find((s: School) => s.id === ms.id);
-          if (!saved) return ms;
-          return { ...ms, ...saved, name: ms.name, diseCode: ms.diseCode };
+          const s = (data.schools || []).find((x: School) => x.id === ms.id);
+          return s ? { ...s, name: ms.name, diseCode: ms.diseCode } : ms;
         });
-
         setSchools(mergedSchools);
         setRecords(data.records || []);
         setCirculars(data.circulars || []);
@@ -77,33 +73,12 @@ const App: React.FC = () => {
         setSuggestions(data.suggestions || []);
         setAchievements(data.achievements || []);
         setAdminPasswords(data.adminPasswords || DEFAULT_ADMIN_PASSWORDS);
-      } catch (e) {
-        console.error("Storage Load Error", e);
-      }
+      } catch (e) { console.error(e); }
     }
   }, []);
 
-  // Save Data Helper
-  const saveData = (updates: {
-    schools?: School[],
-    records?: DataRecord[],
-    circulars?: Circular[],
-    competitions?: Competition[],
-    suggestions?: Suggestion[],
-    achievements?: Achievement[],
-    adminPasswords?: typeof DEFAULT_ADMIN_PASSWORDS
-  }) => {
-    // Update local state first
-    if (updates.schools) setSchools(updates.schools);
-    if (updates.records) setRecords(updates.records);
-    if (updates.circulars) setCirculars(updates.circulars);
-    if (updates.competitions) setCompetitions(updates.competitions);
-    if (updates.suggestions) setSuggestions(updates.suggestions);
-    if (updates.achievements) setAchievements(updates.achievements);
-    if (updates.adminPasswords) setAdminPasswords(updates.adminPasswords);
-
-    // Save current snapshots to localStorage
-    const currentData = {
+  const persist = (updates: any) => {
+    const full = {
       schools: updates.schools || schools,
       records: updates.records || records,
       circulars: updates.circulars || circulars,
@@ -113,13 +88,12 @@ const App: React.FC = () => {
       adminPasswords: updates.adminPasswords || adminPasswords,
       lastUpdated: Date.now()
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(currentData));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(full));
   };
 
   const hasNewSuggestions = useMemo(() => {
     if (suggestions.length === 0) return false;
-    const latestTimestamp = Math.max(...suggestions.map(s => s.timestamp));
-    return latestTimestamp > lastViewedSuggestions;
+    return Math.max(...suggestions.map(s => s.timestamp)) > lastViewedSuggestions;
   }, [suggestions, lastViewedSuggestions]);
 
   const handleTabChange = (tab: TabType) => {
@@ -159,10 +133,11 @@ const App: React.FC = () => {
         onLogin={handleLogin} 
         onResetPassword={async (dise, pass, role) => {
           if (role === 'principal') {
-            const updated = schools.map(s => s.diseCode === dise ? { ...s, password: pass } : s);
-            saveData({ schools: updated });
+            const up = schools.map(s => s.diseCode === dise ? { ...s, password: pass } : s);
+            setSchools(up); persist({ schools: up });
           } else if (role) {
-            saveData({ adminPasswords: { ...adminPasswords, [role as keyof typeof DEFAULT_ADMIN_PASSWORDS]: pass } });
+            const up = { ...adminPasswords, [role as string]: pass };
+            setAdminPasswords(up as any); persist({ adminPasswords: up });
           }
         }} 
       />
@@ -175,7 +150,7 @@ const App: React.FC = () => {
 
       <aside className={`fixed md:static inset-y-0 left-0 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 ease-in-out w-72 bg-slate-900 text-white flex-shrink-0 flex flex-col z-50 shadow-2xl`}>
         <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-          <div className="bg-emerald-600 p-2.5 rounded-xl shadow-lg shadow-emerald-900/20">
+          <div className="bg-emerald-600 p-2.5 rounded-xl shadow-lg">
              <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
           </div>
           <span className="font-black text-lg tracking-tight uppercase">CRC KHAKHARDA</span>
@@ -212,15 +187,10 @@ const App: React.FC = () => {
 
         <div className="p-4 border-t border-slate-800 space-y-2">
            <div className="flex items-center gap-3 px-4 py-3 bg-slate-800/50 rounded-xl mb-2 border border-slate-700/50">
-              <div className="w-3 h-3 rounded-full shadow-sm bg-emerald-500 shadow-emerald-500/50"></div>
-              <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest truncate">
-                Local Database
-              </span>
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></div>
+              <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest truncate">Local Database</span>
            </div>
-           <button 
-              onClick={handleLogout} 
-              className="w-full py-3 px-4 rounded-xl text-[10px] font-black text-rose-400 border border-rose-400/20 hover:bg-rose-400/10 transition-all uppercase tracking-widest flex items-center justify-center gap-2"
-           >
+           <button onClick={handleLogout} className="w-full py-3 px-4 rounded-xl text-[10px] font-black text-rose-400 border border-rose-400/20 hover:bg-rose-400/10 transition-all uppercase tracking-widest flex items-center justify-center gap-2">
               લોગઆઉટ
            </button>
         </div>
@@ -241,43 +211,25 @@ const App: React.FC = () => {
 
         <main className="flex-grow overflow-y-auto p-4 md:p-8 relative">
           <div className="bg-white rounded-[2rem] md:rounded-[3.5rem] shadow-xl border border-slate-100 min-h-[85vh] flex flex-col overflow-hidden">
-            {activeTab === 'schools' && (
-              <SchoolList 
-                schools={schools} 
-                records={records} 
-                userRole={userRole} 
-                onImpersonate={(s) => { 
-                  if(userRole === 'crc_admin'){ 
-                    setLoggedInSchoolId(s.id); 
-                    setUserRole('principal'); 
-                    setActiveTab('school-mgmt'); 
-                  } 
-                }} 
-              />
-            )}
+            {activeTab === 'schools' && <SchoolList schools={schools} records={records} userRole={userRole} onImpersonate={(s) => { if(userRole === 'crc_admin'){ setLoggedInSchoolId(s.id); setUserRole('principal'); setActiveTab('school-mgmt'); } }} />}
             {activeTab === 'reports' && <Reports schools={schools} records={records} onRestoreData={() => {}} userRole={userRole} />}
-            {activeTab === 'school-mgmt' && loggedInSchool && <SchoolManagement school={loggedInSchool} onUpdate={(s) => saveData({ schools: schools.map(i => i.id === s.id ? s : i) })} userRole={userRole} />}
-            
-            {(activeTab === 'enrollment' || activeTab === 'student-stats' || activeTab === 'cwsn' || activeTab === 'fln') && loggedInSchool && (
-              <StudentDataEntry school={loggedInSchool} activeSection={activeTab} onUpdate={(s) => saveData({ schools: schools.map(i => i.id === s.id ? s : i) })} userRole={userRole} />
-            )}
-
-            {activeTab === 'circulars' && <Circulars circulars={circulars} onAdd={(c) => saveData({ circulars: [c, ...circulars] })} onRemove={(id) => saveData({ circulars: circulars.filter(c => c.id !== id) })} userRole={userRole} />}
-            {activeTab === 'competitions' && <Competitions competitions={competitions} onAdd={(c) => saveData({ competitions: [c, ...competitions] })} onRemove={(id) => saveData({ competitions: competitions.filter(c => c.id !== id) })} userRole={userRole} />}
-            {activeTab === 'suggestions' && <Suggestions suggestions={suggestions} onAdd={(s) => saveData({ suggestions: [s, ...suggestions] })} onRemove={(id) => saveData({ suggestions: suggestions.filter(s => s.id !== id) })} userRole={userRole} />}
-            {activeTab === 'achievements' && <SchoolAchievements achievements={achievements} onAdd={(a) => saveData({ achievements: [a, ...achievements] })} onRemove={(id) => saveData({ achievements: achievements.filter(a => a.id !== id) })} userRole={userRole} loggedInSchool={loggedInSchool} />}
+            {activeTab === 'school-mgmt' && loggedInSchool && <SchoolManagement school={loggedInSchool} onUpdate={(s) => { const up = schools.map(i => i.id === s.id ? s : i); setSchools(up); persist({ schools: up }); }} userRole={userRole} />}
+            {(activeTab === 'enrollment' || activeTab === 'student-stats' || activeTab === 'cwsn' || activeTab === 'fln') && loggedInSchool && <StudentDataEntry school={loggedInSchool} activeSection={activeTab} onUpdate={(s) => { const up = schools.map(i => i.id === s.id ? s : i); setSchools(up); persist({ schools: up }); }} userRole={userRole} />}
+            {activeTab === 'circulars' && <Circulars circulars={circulars} onAdd={(c) => { const up = [c, ...circulars]; setCirculars(up); persist({ circulars: up }); }} onRemove={(id) => { const up = circulars.filter(c => c.id !== id); setCirculars(up); persist({ circulars: up }); }} userRole={userRole} />}
+            {activeTab === 'competitions' && <Competitions competitions={competitions} onAdd={(c) => { const up = [c, ...competitions]; setCompetitions(up); persist({ competitions: up }); }} onRemove={(id) => { const up = competitions.filter(c => c.id !== id); setCompetitions(up); persist({ competitions: up }); }} userRole={userRole} />}
+            {activeTab === 'suggestions' && <Suggestions suggestions={suggestions} onAdd={(s) => { const up = [s, ...suggestions]; setSuggestions(up); persist({ suggestions: up }); }} onRemove={(id) => { const up = suggestions.filter(s => s.id !== id); setSuggestions(up); persist({ suggestions: up }); }} userRole={userRole} />}
+            {activeTab === 'achievements' && <SchoolAchievements achievements={achievements} onAdd={(a) => { const up = [a, ...achievements]; setAchievements(up); persist({ achievements: up }); }} onRemove={(id) => { const up = achievements.filter(a => a.id !== id); setAchievements(up); persist({ achievements: up }); }} userRole={userRole} loggedInSchool={loggedInSchool} />}
           </div>
         </main>
       </div>
 
       {showWelcome && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-500">
-           <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-500 border-4 border-white">
-              <div className={`p-10 text-center text-white ${userRole === 'dpc_admin' ? 'bg-rose-600' : 'bg-amber-600'}`}>
+           <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-500 border-4 border-white text-center">
+              <div className={`p-10 text-white ${userRole === 'dpc_admin' ? 'bg-rose-600' : 'bg-amber-600'}`}>
                  <h3 className="text-2xl font-black mb-1 uppercase tracking-tight">સ્વાગત સંદેશ (WELCOME)</h3>
               </div>
-              
-              <div className="p-12 text-center space-y-8">
+              <div className="p-12 space-y-8">
                  <p className="text-xl font-bold text-slate-700 leading-relaxed italic">
                     {userRole === 'brc_admin' && "BRC કૉ. ઓર્ડીનેટર શ્રી જામ કલ્યાણપુરનું ખાખરડા ક્લસ્ટરની તમામ શાળાઓ તથા CRC કૉ. ઓર્ડીનેટર હાર્દિક સ્વાગત કરીએ છીએ. આભાર..🙏"}
                     {userRole === 'dpc_admin' && "જિલ્લા પ્રોજેક્ટ કૉ ઓર્ડીનેટર શ્રી તથા જિલ્લા પ્રાથમિક શિક્ષણાધિકારી શ્રી દેવભૂમિ દ્વારકાનું અમે ખાખરડા ક્લસ્ટરની તમામ શાળાઓ તથા CRC કૉ. ઓર્ડીનેટર હાર્દિક સ્વાગત કરીએ છીએ. આભાર..🙏"}
