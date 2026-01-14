@@ -12,9 +12,19 @@ import Suggestions from './components/Suggestions';
 import SchoolAchievements from './components/SchoolAchievements';
 import { TabType, School, DataRecord, UserRole, Circular, Competition, Suggestion, Achievement } from './types';
 
-// IMPORTANT: Never change this key unless you want a fresh start.
-const STORAGE_KEY = "crc_khakharda_production_v1";
-const SUGGESTIONS_LAST_VIEWED_KEY = "suggestions_last_viewed_timestamp";
+/**
+ * --- FIREBASE CONFIGURATION ---
+ * આ વિગતો તમારા પ્રોજેક્ટ માટે અપડેટ કરવામાં આવી છે.
+ */
+const firebaseConfig = {
+  apiKey: "AIzaSyC9eS9g-fjkQo7jS8ni6GoIvk5vMpFG5b8",
+  authDomain: "cluster-resource-center.firebaseapp.com",
+  projectId: "cluster-resource-center",
+  storageBucket: "cluster-resource-center.firebasestorage.app",
+  messagingSenderId: "321646212044",
+  appId: "1:321646212044:web:b871be321d4c8b19296369",
+  measurementId: "G-R35T6T20G5"
+};
 
 const MASTER_SCHOOLS: School[] = [
   { id: '1', name: 'BHOPALKA PRIMARY SCHOOL', diseCode: '24290300801', principal: 'આચાર્યશ્રી', contact: '', password: '123', schoolType: 'NON SOE', standards: '1-8' },
@@ -43,13 +53,11 @@ const App: React.FC = () => {
   const [originalRole, setOriginalRole] = useState<UserRole>(null);
   const [loggedInSchoolId, setLoggedInSchoolId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'setup_required'>('syncing');
   const [showWelcome, setShowWelcome] = useState(false);
-  const [showBackupModal, setShowBackupModal] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Data State
-  const [schools, setSchools] = useState<School[]>([]);
+  const [schools, setSchools] = useState<School[]>(MASTER_SCHOOLS);
   const [records, setRecords] = useState<DataRecord[]>([]);
   const [circulars, setCirculars] = useState<Circular[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -58,47 +66,87 @@ const App: React.FC = () => {
   const [adminPasswords, setAdminPasswords] = useState(DEFAULT_ADMIN_PASSWORDS);
   
   const [lastViewedSuggestions, setLastViewedSuggestions] = useState<number>(() => {
-    return parseInt(localStorage.getItem(SUGGESTIONS_LAST_VIEWED_KEY) || '0');
+    return parseInt(localStorage.getItem("suggestions_last_viewed") || '0');
   });
 
-  // Initialization: Safely load and merge data
+  const dbRef = useRef<any>(null);
+
+  // Firebase Setup
   useEffect(() => {
-    const savedData = localStorage.getItem(STORAGE_KEY);
-    if (savedData) {
+    const firebase = (window as any).firebase;
+    if (!firebase) {
+      setSyncStatus('error');
+      return;
+    }
+
+    if (!firebase.apps.length) {
       try {
-        const parsed = JSON.parse(savedData);
+        firebase.initializeApp(firebaseConfig);
+      } catch (e) {
+        setSyncStatus('error');
+        return;
+      }
+    }
+    
+    dbRef.current = firebase.firestore();
+    setSyncStatus('syncing');
+    
+    // Cloud Synchronization logic
+    const unsubscribe = dbRef.current.collection("cluster_data").doc("master_v1").onSnapshot((doc: any) => {
+      if (doc.exists) {
+        const data = doc.data();
         
-        // Merge Logic: Prioritize saved data for dynamic fields, but keep master ID/Names intact
+        // Merge cloud data with hardcoded master structure
+        const cloudSchools = data.schools || [];
         const mergedSchools = MASTER_SCHOOLS.map(ms => {
-          const saved = (parsed.schools || []).find((s: School) => s.id === ms.id);
+          const saved = cloudSchools.find((s: School) => s.id === ms.id);
           if (!saved) return ms;
-          // Deep merge critical arrays and objects to prevent loss
-          return {
-            ...ms, // Static defaults
-            ...saved, // Dynamic overrides from user
-            name: ms.name, // Keep official names
-            diseCode: ms.diseCode // Keep official codes
-          };
+          return { ...ms, ...saved, name: ms.name, diseCode: ms.diseCode };
         });
 
         setSchools(mergedSchools);
-        setRecords(parsed.records || []);
-        setCirculars(parsed.circulars || []);
-        setCompetitions(parsed.competitions || []);
-        setSuggestions(parsed.suggestions || []);
-        setAchievements(parsed.achievements || []);
-        setAdminPasswords(parsed.adminPasswords || DEFAULT_ADMIN_PASSWORDS);
-      } catch (e) {
-        console.error("Critical Load Error - Recovering Defaults:", e);
-        setSchools(MASTER_SCHOOLS);
+        setRecords(data.records || []);
+        setCirculars(data.circulars || []);
+        setCompetitions(data.competitions || []);
+        setSuggestions(data.suggestions || []);
+        setAchievements(data.achievements || []);
+        setAdminPasswords(data.adminPasswords || DEFAULT_ADMIN_PASSWORDS);
+        setSyncStatus('synced');
+      } else {
+        // Initial setup for the first time
+        saveToCloud({
+          schools: MASTER_SCHOOLS,
+          records: [],
+          circulars: [],
+          competitions: [],
+          suggestions: [],
+          achievements: [],
+          adminPasswords: DEFAULT_ADMIN_PASSWORDS
+        });
       }
-    } else {
-      setSchools(MASTER_SCHOOLS);
-    }
+    }, (error: any) => {
+      console.error("Firebase Error:", error);
+      setSyncStatus('error');
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  // Robust Global Save Function
-  const saveData = (updates: {
+  const saveToCloud = async (updates: any) => {
+    if (!dbRef.current) return;
+    setSyncStatus('syncing');
+    try {
+      await dbRef.current.collection("cluster_data").doc("master_v1").set({
+        ...updates,
+        lastUpdated: Date.now()
+      }, { merge: true });
+      setSyncStatus('synced');
+    } catch (e) {
+      setSyncStatus('error');
+    }
+  };
+
+  const saveData = async (updates: {
     schools?: School[],
     records?: DataRecord[],
     circulars?: Circular[],
@@ -107,99 +155,7 @@ const App: React.FC = () => {
     achievements?: Achievement[],
     adminPasswords?: typeof DEFAULT_ADMIN_PASSWORDS
   }) => {
-    setSyncStatus('syncing');
-
-    setSchools(prevSchools => {
-      const nextSchools = updates.schools || prevSchools;
-      setRecords(prevRecords => {
-        const nextRecords = updates.records || prevRecords;
-        setCirculars(prevCirculars => {
-          const nextCirculars = updates.circulars || prevCirculars;
-          setCompetitions(prevCompetitions => {
-            const nextCompetitions = updates.competitions || prevCompetitions;
-            setSuggestions(prevSuggestions => {
-              const nextSuggestions = updates.suggestions || prevSuggestions;
-              setAchievements(prevAchievements => {
-                const nextAchievements = updates.achievements || prevAchievements;
-                setAdminPasswords(prevPasswords => {
-                  const nextPasswords = updates.adminPasswords || prevPasswords;
-
-                  const dataToSave = {
-                    schools: nextSchools,
-                    records: nextRecords,
-                    circulars: nextCirculars,
-                    competitions: nextCompetitions,
-                    suggestions: nextSuggestions,
-                    achievements: nextAchievements,
-                    adminPasswords: nextPasswords,
-                    schemaVersion: "1.0",
-                    lastModified: Date.now()
-                  };
-                  
-                  localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
-                  return nextPasswords;
-                });
-                return nextAchievements;
-              });
-              return nextSuggestions;
-            });
-            return nextCompetitions;
-          });
-          return nextCirculars;
-        });
-        return nextRecords;
-      });
-      return nextSchools;
-    });
-
-    setTimeout(() => setSyncStatus('synced'), 400);
-  };
-
-  // Export Entire Database as JSON file
-  const exportDatabase = () => {
-    const data = {
-      schools, records, circulars, competitions, suggestions, achievements, adminPasswords,
-      exportDate: new Date().toISOString(),
-      source: "CRC_KHAKHARDA_MANAGEMENT_PORTAL"
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `CRC_KHAKHARDA_BACKUP_${new Date().toLocaleDateString('gu-IN').replace(/\//g, '-')}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Import Database from JSON file
-  const importDatabase = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target?.result as string);
-        if (!parsed.schools) throw new Error("Invalid format");
-        
-        if (window.confirm("ચેતવણી: આ ફાઇલ અપલોડ કરવાથી તમારી હાલની તમામ માહિતી બદલાઈ જશે. શું તમે ખરેખર રીસ્ટોર કરવા માંગો છો?")) {
-          saveData({
-            schools: parsed.schools,
-            records: parsed.records,
-            circulars: parsed.circulars,
-            competitions: parsed.competitions,
-            suggestions: parsed.suggestions,
-            achievements: parsed.achievements,
-            adminPasswords: parsed.adminPasswords
-          });
-          alert("ડેટા સફળતાપૂર્વક રીસ્ટોર કરવામાં આવ્યો છે. પેજ રીલોડ થશે.");
-          window.location.reload();
-        }
-      } catch (err) {
-        alert("ખોટી ફાઇલ: ડેટા રીસ્ટોર કરી શકાયો નથી.");
-      }
-    };
-    reader.readAsText(file);
+    await saveToCloud(updates);
   };
 
   const hasNewSuggestions = useMemo(() => {
@@ -214,7 +170,7 @@ const App: React.FC = () => {
     if (tab === 'suggestions') {
       const now = Date.now();
       setLastViewedSuggestions(now);
-      localStorage.setItem(SUGGESTIONS_LAST_VIEWED_KEY, now.toString());
+      localStorage.setItem("suggestions_last_viewed", now.toString());
     }
   };
 
@@ -248,7 +204,7 @@ const App: React.FC = () => {
             const updated = schools.map(s => s.diseCode === dise ? { ...s, password: pass } : s);
             saveData({ schools: updated });
           } else if (role) {
-            saveData({ adminPasswords: { ...adminPasswords, [role]: pass } });
+            saveData({ adminPasswords: { ...adminPasswords, [role as keyof typeof DEFAULT_ADMIN_PASSWORDS]: pass } });
           }
         }} 
       />
@@ -261,7 +217,7 @@ const App: React.FC = () => {
 
       <aside className={`fixed md:static inset-y-0 left-0 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform duration-300 ease-in-out w-72 bg-slate-900 text-white flex-shrink-0 flex flex-col z-50 shadow-2xl`}>
         <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-          <div className="bg-emerald-600 p-2.5 rounded-xl">
+          <div className="bg-emerald-600 p-2.5 rounded-xl shadow-lg shadow-emerald-900/20">
              <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
           </div>
           <span className="font-black text-lg tracking-tight uppercase">CRC KHAKHARDA</span>
@@ -284,31 +240,35 @@ const App: React.FC = () => {
             <button 
               key={item.id} 
               onClick={() => handleTabChange(item.id as TabType)} 
-              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-xs font-black transition-all ${activeTab === item.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-[10px] font-black transition-all ${activeTab === item.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
             >
               <div className="flex items-center gap-3">
                 <span className="text-lg">{item.icon}</span>{item.label}
               </div>
               {item.showStar && (
-                <span className="text-amber-400 animate-pulse text-lg" title="નવી સૂચના ઉપલબ્ધ છે">⭐</span>
+                <span className="text-amber-400 animate-pulse text-lg">⭐</span>
               )}
             </button>
           ))}
         </nav>
 
         <div className="p-4 border-t border-slate-800 space-y-2">
-           <button 
-              onClick={() => setShowBackupModal(true)} 
-              className="w-full py-3 px-4 rounded-xl text-[10px] font-black text-emerald-400 border border-emerald-400/20 hover:bg-emerald-400/10 transition-all uppercase tracking-widest flex items-center justify-center gap-2"
-           >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              ડેટા બેકઅપ
-           </button>
+           <div className="flex items-center gap-3 px-4 py-3 bg-slate-800/50 rounded-xl mb-2 border border-slate-700/50">
+              <div className={`w-3 h-3 rounded-full shadow-sm ${
+                syncStatus === 'synced' ? 'bg-emerald-500 shadow-emerald-500/50' : 
+                syncStatus === 'syncing' ? 'bg-amber-500 animate-pulse' : 
+                syncStatus === 'setup_required' ? 'bg-indigo-500' : 'bg-rose-500'
+              }`}></div>
+              <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest truncate">
+                {syncStatus === 'synced' ? 'Cloud Live' : 
+                 syncStatus === 'syncing' ? 'Syncing...' : 
+                 syncStatus === 'setup_required' ? 'Setup Required' : 'Cloud Error'}
+              </span>
+           </div>
            <button 
               onClick={handleLogout} 
               className="w-full py-3 px-4 rounded-xl text-[10px] font-black text-rose-400 border border-rose-400/20 hover:bg-rose-400/10 transition-all uppercase tracking-widest flex items-center justify-center gap-2"
            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
               લોગઆઉટ
            </button>
         </div>
@@ -324,10 +284,10 @@ const App: React.FC = () => {
           onExitImpersonation={() => { setUserRole(originalRole); setLoggedInSchoolId(null); setActiveTab('schools'); }}
           schoolName={loggedInSchool?.name}
           toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-          syncStatus={syncStatus}
+          syncStatus={syncStatus === 'synced' ? 'synced' : syncStatus === 'syncing' ? 'syncing' : 'error'}
         />
 
-        <main className="flex-grow overflow-y-auto p-4 md:p-8">
+        <main className="flex-grow overflow-y-auto p-4 md:p-8 relative">
           <div className="bg-white rounded-[2rem] md:rounded-[3.5rem] shadow-xl border border-slate-100 min-h-[85vh] flex flex-col overflow-hidden">
             {activeTab === 'schools' && (
               <SchoolList 
@@ -358,58 +318,19 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Backup & Recovery Modal */}
-      {showBackupModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
-           <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 border border-white">
-              <div className="bg-emerald-600 p-8 text-center text-white">
-                 <h3 className="text-xl font-black mb-1 uppercase tracking-tight">ડેટા મેનેજમેન્ટ (SECURITY)</h3>
-                 <p className="text-emerald-100 font-bold text-[10px] tracking-[0.2em] uppercase">Backup & Recovery Portal</p>
-              </div>
-              
-              <div className="p-10 space-y-8">
-                 <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-3xl space-y-3">
-                    <h4 className="font-black text-emerald-800 text-sm">૧. બેકઅપ ડાઉનલોડ કરો</h4>
-                    <p className="text-[11px] text-emerald-600 font-bold leading-relaxed">તમારા ક્લસ્ટરનો તમામ ડેટા એક સુરક્ષિત ફાઇલમાં ડાઉનલોડ કરો. મહિનામાં એકવાર આ કરવું સલાહભર્યું છે.</p>
-                    <button onClick={exportDatabase} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition-all">DOWNLOAD BACKUP (.JSON)</button>
-                 </div>
-
-                 <div className="bg-slate-50 border border-slate-200 p-6 rounded-3xl space-y-3">
-                    <h4 className="font-black text-slate-800 text-sm">૨. ડેટા પાછો લાવો (Restore)</h4>
-                    <p className="text-[11px] text-slate-500 font-bold leading-relaxed">જો તમે બ્રાઉઝર બદલ્યું હોય, તો ડાઉનલોડ કરેલી બેકઅપ ફાઇલ અહીંથી અપલોડ કરી બધો ડેટા પાછો મેળવી શકો છો.</p>
-                    <input type="file" accept=".json" className="hidden" ref={fileInputRef} onChange={importDatabase} />
-                    <button onClick={() => fileInputRef.current?.click()} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs shadow-lg active:scale-95 transition-all">UPLOAD & RESTORE</button>
-                 </div>
-
-                 <button onClick={() => setShowBackupModal(false)} className="w-full text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-rose-500 transition-colors">બંધ કરો (CLOSE)</button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* Welcome Message Modal */}
       {showWelcome && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-500">
            <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-500 border-4 border-white">
               <div className={`p-10 text-center text-white ${userRole === 'dpc_admin' ? 'bg-rose-600' : 'bg-amber-600'}`}>
-                 <div className="w-20 h-20 bg-white/20 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                 </div>
                  <h3 className="text-2xl font-black mb-1 uppercase tracking-tight">સ્વાગત સંદેશ (WELCOME)</h3>
               </div>
               
               <div className="p-12 text-center space-y-8">
                  <p className="text-xl font-bold text-slate-700 leading-relaxed italic">
-                    {userRole === 'brc_admin' && "BRC કૉ. ઓર્ડીનેટર શ્રી જામ કલ્યાણપુરનું ખાખરડા ક્લસ્ટરની તમામ શાળાઓ તથા CRC કૉ. ઓર્ડીનેટર હાર્દિક સ્વાગત કરીએ છીએ. આપશ્રીને અહીં ક્લસ્ટરની તમામ શાળાઓની વિગતો જોવા મળશે. અહીંથી આપ અમોને પરિપત્રો મૂકીને અથવા સૂચનપેટીના માધ્યમથી જરૂરી માર્ગદર્શન સૂચન કરી શકો છો. આભાર..🙏"}
-                    {userRole === 'dpc_admin' && "જિલ્લા પ્રોજેક્ટ કૉ ઓર્ડીનેટર શ્રી તથા જિલ્લા પ્રાથમિક શિક્ષણાધિકારી શ્રી દેવભૂમિ દ્વારકાનું અમે ખાખરડા ક્લસ્ટરની તમામ શાળાઓ તથા CRC કૉ. ઓર્ડીનેટર હાર્દિક સ્વાગત કરીએ છીએ. આપશ્રીને અહીં ક્લસ્ટરની તમામ શાળાઓની વિગતો જોવા મળશે. અહીંથી આપ અમોને પરિપત્રો મૂકીને અથવા સૂચનપેટીના માધ્યમથી જરૂરી માર્ગદર્શન સૂચન કરી શકો છો. આભાર..🙏"}
+                    {userRole === 'brc_admin' && "BRC કૉ. ઓર્ડીનેટર શ્રી જામ કલ્યાણપુરનું ખાખરડા ક્લસ્ટરની તમામ શાળાઓ તથા CRC કૉ. ઓર્ડીનેટર હાર્દિક સ્વાગત કરીએ છીએ. આભાર..🙏"}
+                    {userRole === 'dpc_admin' && "જિલ્લા પ્રોજેક્ટ કૉ ઓર્ડીનેટર શ્રી તથા જિલ્લા પ્રાથમિક શિક્ષણાધિકારી શ્રી દેવભૂમિ દ્વારકાનું અમે ખાખરડા ક્લસ્ટરની તમામ શાળાઓ તથા CRC કૉ. ઓર્ડીનેટર હાર્દિક સ્વાગત કરીએ છીએ. આભાર..🙏"}
                  </p>
-                 
-                 <button 
-                  onClick={() => setShowWelcome(false)} 
-                  className={`px-16 py-5 rounded-[2rem] font-black text-white text-lg shadow-xl transition-all transform active:scale-95 uppercase tracking-widest ${userRole === 'dpc_admin' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700'}`}
-                 >
-                    OK (સમજાયું)
-                 </button>
+                 <button onClick={() => setShowWelcome(false)} className={`px-16 py-5 rounded-[2rem] font-black text-white text-lg shadow-xl uppercase tracking-widest ${userRole === 'dpc_admin' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700'}`}>OK</button>
               </div>
            </div>
         </div>
