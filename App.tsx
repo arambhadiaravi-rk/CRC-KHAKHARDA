@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Header from './components/Header';
 import SchoolList from './components/SchoolList';
 import Login from './components/Login';
@@ -11,20 +11,6 @@ import Competitions from './components/Competitions';
 import Suggestions from './components/Suggestions';
 import SchoolAchievements from './components/SchoolAchievements';
 import { TabType, School, DataRecord, UserRole, Circular, Competition, Suggestion, Achievement } from './types';
-
-/**
- * --- FIREBASE CONFIGURATION ---
- * આ વિગતો તમારા પ્રોજેક્ટ માટે અપડેટ કરવામાં આવી છે.
- */
-const firebaseConfig = {
-  apiKey: "AIzaSyC9eS9g-fjkQo7jS8ni6GoIvk5vMpFG5b8",
-  authDomain: "cluster-resource-center.firebaseapp.com",
-  projectId: "cluster-resource-center",
-  storageBucket: "cluster-resource-center.firebasestorage.app",
-  messagingSenderId: "321646212044",
-  appId: "1:321646212044:web:b871be321d4c8b19296369",
-  measurementId: "G-R35T6T20G5"
-};
 
 const MASTER_SCHOOLS: School[] = [
   { id: '1', name: 'BHOPALKA PRIMARY SCHOOL', diseCode: '24290300801', principal: 'આચાર્યશ્રી', contact: '', password: '123', schoolType: 'NON SOE', standards: '1-8' },
@@ -47,16 +33,17 @@ const DEFAULT_ADMIN_PASSWORDS = {
   dpc_admin: 'KKD2429030'
 };
 
+const STORAGE_KEY = 'crc_khakharda_master_v1';
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('schools');
   const [userRole, setUserRole] = useState<UserRole>(null);
   const [originalRole, setOriginalRole] = useState<UserRole>(null);
   const [loggedInSchoolId, setLoggedInSchoolId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'setup_required'>('syncing');
   const [showWelcome, setShowWelcome] = useState(false);
   
-  // Data State
+  // Data State initialized from localStorage
   const [schools, setSchools] = useState<School[]>(MASTER_SCHOOLS);
   const [records, setRecords] = useState<DataRecord[]>([]);
   const [circulars, setCirculars] = useState<Circular[]>([]);
@@ -69,37 +56,16 @@ const App: React.FC = () => {
     return parseInt(localStorage.getItem("suggestions_last_viewed") || '0');
   });
 
-  const dbRef = useRef<any>(null);
-
-  // Firebase Setup
+  // Load Initial Data
   useEffect(() => {
-    const firebase = (window as any).firebase;
-    if (!firebase) {
-      setSyncStatus('error');
-      return;
-    }
-
-    if (!firebase.apps.length) {
+    const savedData = localStorage.getItem(STORAGE_KEY);
+    if (savedData) {
       try {
-        firebase.initializeApp(firebaseConfig);
-      } catch (e) {
-        setSyncStatus('error');
-        return;
-      }
-    }
-    
-    dbRef.current = firebase.firestore();
-    setSyncStatus('syncing');
-    
-    // Cloud Synchronization logic
-    const unsubscribe = dbRef.current.collection("cluster_data").doc("master_v1").onSnapshot((doc: any) => {
-      if (doc.exists) {
-        const data = doc.data();
+        const data = JSON.parse(savedData);
         
-        // Merge cloud data with hardcoded master structure
-        const cloudSchools = data.schools || [];
+        // Merge with MASTER_SCHOOLS to ensure IDs and Core Info remain consistent
         const mergedSchools = MASTER_SCHOOLS.map(ms => {
-          const saved = cloudSchools.find((s: School) => s.id === ms.id);
+          const saved = (data.schools || []).find((s: School) => s.id === ms.id);
           if (!saved) return ms;
           return { ...ms, ...saved, name: ms.name, diseCode: ms.diseCode };
         });
@@ -111,42 +77,14 @@ const App: React.FC = () => {
         setSuggestions(data.suggestions || []);
         setAchievements(data.achievements || []);
         setAdminPasswords(data.adminPasswords || DEFAULT_ADMIN_PASSWORDS);
-        setSyncStatus('synced');
-      } else {
-        // Initial setup for the first time
-        saveToCloud({
-          schools: MASTER_SCHOOLS,
-          records: [],
-          circulars: [],
-          competitions: [],
-          suggestions: [],
-          achievements: [],
-          adminPasswords: DEFAULT_ADMIN_PASSWORDS
-        });
+      } catch (e) {
+        console.error("Storage Load Error", e);
       }
-    }, (error: any) => {
-      console.error("Firebase Error:", error);
-      setSyncStatus('error');
-    });
-
-    return () => unsubscribe();
+    }
   }, []);
 
-  const saveToCloud = async (updates: any) => {
-    if (!dbRef.current) return;
-    setSyncStatus('syncing');
-    try {
-      await dbRef.current.collection("cluster_data").doc("master_v1").set({
-        ...updates,
-        lastUpdated: Date.now()
-      }, { merge: true });
-      setSyncStatus('synced');
-    } catch (e) {
-      setSyncStatus('error');
-    }
-  };
-
-  const saveData = async (updates: {
+  // Save Data Helper
+  const saveData = (updates: {
     schools?: School[],
     records?: DataRecord[],
     circulars?: Circular[],
@@ -155,7 +93,27 @@ const App: React.FC = () => {
     achievements?: Achievement[],
     adminPasswords?: typeof DEFAULT_ADMIN_PASSWORDS
   }) => {
-    await saveToCloud(updates);
+    // Update local state first
+    if (updates.schools) setSchools(updates.schools);
+    if (updates.records) setRecords(updates.records);
+    if (updates.circulars) setCirculars(updates.circulars);
+    if (updates.competitions) setCompetitions(updates.competitions);
+    if (updates.suggestions) setSuggestions(updates.suggestions);
+    if (updates.achievements) setAchievements(updates.achievements);
+    if (updates.adminPasswords) setAdminPasswords(updates.adminPasswords);
+
+    // Save current snapshots to localStorage
+    const currentData = {
+      schools: updates.schools || schools,
+      records: updates.records || records,
+      circulars: updates.circulars || circulars,
+      competitions: updates.competitions || competitions,
+      suggestions: updates.suggestions || suggestions,
+      achievements: updates.achievements || achievements,
+      adminPasswords: updates.adminPasswords || adminPasswords,
+      lastUpdated: Date.now()
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(currentData));
   };
 
   const hasNewSuggestions = useMemo(() => {
@@ -254,15 +212,9 @@ const App: React.FC = () => {
 
         <div className="p-4 border-t border-slate-800 space-y-2">
            <div className="flex items-center gap-3 px-4 py-3 bg-slate-800/50 rounded-xl mb-2 border border-slate-700/50">
-              <div className={`w-3 h-3 rounded-full shadow-sm ${
-                syncStatus === 'synced' ? 'bg-emerald-500 shadow-emerald-500/50' : 
-                syncStatus === 'syncing' ? 'bg-amber-500 animate-pulse' : 
-                syncStatus === 'setup_required' ? 'bg-indigo-500' : 'bg-rose-500'
-              }`}></div>
+              <div className="w-3 h-3 rounded-full shadow-sm bg-emerald-500 shadow-emerald-500/50"></div>
               <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest truncate">
-                {syncStatus === 'synced' ? 'Cloud Live' : 
-                 syncStatus === 'syncing' ? 'Syncing...' : 
-                 syncStatus === 'setup_required' ? 'Setup Required' : 'Cloud Error'}
+                Local Database
               </span>
            </div>
            <button 
@@ -284,7 +236,7 @@ const App: React.FC = () => {
           onExitImpersonation={() => { setUserRole(originalRole); setLoggedInSchoolId(null); setActiveTab('schools'); }}
           schoolName={loggedInSchool?.name}
           toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-          syncStatus={syncStatus === 'synced' ? 'synced' : syncStatus === 'syncing' ? 'syncing' : 'error'}
+          syncStatus="synced"
         />
 
         <main className="flex-grow overflow-y-auto p-4 md:p-8 relative">
